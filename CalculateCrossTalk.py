@@ -4,11 +4,13 @@ import sympy as sp
 from scipy.linalg import expm
 from scipy.optimize import minimize
 
-h = lambda n, J, z: sum([J[i] * (z[i] - 1) * (z[i + 1] - 1) for i in range(n - 1)])
+# h = lambda n, J, z: sum([J[i] * (z[i] - 1) * (z[i + 1] - 1) for i in range(n - 1)])
+h = lambda n, J, z: sum([J[i] * (z[i] - 1) * (z[(i + 1) % n] - 1) for i in range(n)])
 
 
 def crosstalk_operator(size, t):
-    J = [sp.Symbol(f'J{i + 1}') for i in range(size - 1)]
+    #J = [sp.Symbol(f'J{i + 1}') for i in range(size - 1)]
+    J = [sp.Symbol(f'J{i + 1}') for i in range(size)]
     hem = np.zeros((2 ** size, 2 ** size), dtype=object)
     for i in range(2 ** size):
         binary = '{0:b}'.format(i).zfill(size)
@@ -35,18 +37,18 @@ def one_dim(t, results, n):
         op = np.matmul(H, crosstalk_operator(n, t))
         op = np.matmul(op, H)
 
-        eq = (np.abs(np.dot(np.dot(state(n, i), op), state(n, 0).T))**2 * shots - results.get(f"{i:0{n}b}", 0))**2
-        #eq = sp.sympify(eq)
+        eq = (np.abs(np.dot(np.dot(state(n, i), op), state(n, 0).T)) ** 2 * shots - results.get(f"{i:0{n}b}", 0)) ** 2
+        # eq = sp.sympify(eq)
         equations.append(eq)
-    return solve(equations,n)
-
+    return solve(equations, n)
 
 
 def solve(equations, size):
+    # J = [sp.Symbol(f'J{i + 1}') for i in range(size - 1)]
+    J = [sp.Symbol(f'J{i + 1}') for i in range(size)]
 
-    J = [sp.Symbol(f'J{i + 1}') for i in range(size - 1)]
     expr = sp.sympify(sum(equations))
-    #expr = sp.sympify(equations[0]+equations[1])
+    # expr = sp.sympify(equations[0]+equations[1])
     f = sp.lambdify(J, expr, 'numpy')
 
     def print_progress(xk, state):
@@ -58,8 +60,9 @@ def solve(equations, size):
         except ValueError:
             return np.inf
 
-    #result = minimize(wrapper_func, x0=[1] * (size-1), bounds=(0,2), method='Powell')
-    result = minimize(wrapper_func, x0=[1] * (size-1))
+    # result = minimize(wrapper_func, x0=[1] * (size-1), bounds=(0,2), method='Powell')
+    # result = minimize(wrapper_func, x0=[1] * (size - 1))
+    result = minimize(wrapper_func, x0=[1] * size)
+
     print(result.fun)
     return result.x
-
