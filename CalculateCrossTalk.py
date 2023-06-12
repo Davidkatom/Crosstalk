@@ -62,7 +62,7 @@ def solve(equations, size):
 
     # result = minimize(wrapper_func, x0=[1] * (size-1), bounds=(0,2), method='Powell')
     # result = minimize(wrapper_func, x0=[1] * (size - 1))
-    result = minimize(wrapper_func, x0=[1] * size)
+    result = minimize(wrapper_func, x0=[1] * size, method="Powell")
 
     print(result.fun)
     return result.x
