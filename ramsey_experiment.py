@@ -1,9 +1,12 @@
+import os
 import random
 from itertools import permutations
+import pickle
 
 import matplotlib.pyplot as plt
 import numpy as np
 import time
+from scipy.ndimage import gaussian_filter
 
 import qiskit
 from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, execute, Aer
@@ -43,15 +46,24 @@ class RamseyExperiment:
         backend: backend to run the experiment on
     '''
 
-    def __init__(self, n, delay, shots, J, backend=Aer.get_backend("qasm_simulator")):
-        self.delay = delay
-        self.n = n
-        self.J = J
-        self.backend = backend
-        self.shots = shots
-        self.circuit = self._create_circuit()
-        self.result = self._run()
-        self.z = self._get_z_exp()
+    def __init__(self, n, delay, shots, J, name, backend=Aer.get_backend("qasm_simulator")):
+        file_path = "experiments/" + name + ".pkl"
+        self.name = name
+        if os.path.exists(f'exp/{self.name}.pkl'):
+            with open(f'exp/{self.name}.pkl', 'rb') as f:
+                obj = pickle.load(f)
+                self.__dict__.update(obj.__dict__)
+        else:
+            self.delay = delay
+            self.n = n
+            self.J = J
+            self.backend = backend
+            self.shots = shots
+            self.circuit = self._create_circuit()
+            self.result = self._run()
+            self.z = self._get_z_exp()
+            # with open(f'exp/{self.name}.pkl', 'wb') as f:
+            #    pickle.dump(self, f)
 
     def _create_circuit(self):
         q = QuantumRegister(self.n)
@@ -82,9 +94,9 @@ class RamseyExperiment:
             for outcome, count in self.result.get_counts().items():
                 plus = [count if outcome[i] == '0' else 0]
                 minus = [count if outcome[i] == '1' else 0]
-                Zi.append((sum(plus) - sum(minus)) / sum(self.result.get_counts().values()))
+                Zi.append((sum(plus) - sum(minus)) / self.shots)
 
-        return sum(Zi) / self.n
+        return sum(Zi)  # TODO SHOULD I DIVIDE? / self.n
 
 
 class RamseyBatch:
@@ -109,16 +121,29 @@ class RamseyBatch:
     def _calc_dist_using_fit(self):
         def func(t, *js):
             n = len(js)
-            result = n
+            result = 2 * n
             for i in range(n):
-                result += 2 * np.cos(4 * js[i] * t)
+                print(t)
+                result += 4 * np.cos(4 * js[i] * t)
             for i in range(n):
-                result += np.cos(4 * (js[i] + js[(i + 1) % n]) * t)
-            return result / (2 * (2 * n))
+                result += 2 * np.cos(4 * (js[i] + js[(i + 1) % n]) * t)
+            return result / (2 ** (n - (n - 3)))
 
         initial_js = np.ones(self.n)
         try:
-            guess, pcov = curve_fit(func, self.delay, self.Z, p0=initial_js, bounds=(0, 2))
+
+            # guess, pcov = curve_fit(func, self.delay, self.Z, p0=initial_js, bounds=(0, 2))
+
+            from scipy.optimize import least_squares
+            def residuals(params, t, y_obs):
+                return func(t, *params) - y_obs
+
+            bounds = ([0] * len(initial_js), [2] * len(initial_js))  # Bounds for the parameters
+            initial_js = [1]*self.n  # Example initial guess
+
+            guess = least_squares(residuals, initial_js, loss='huber', args=(self.delay, self.Z)).x
+
+            # TODO check with theory
         except RuntimeError:
             print(f"Failed to converge. Skipping...")
             return list(initial_js)
@@ -130,4 +155,4 @@ class RamseyBatch:
             dist = np.sum([np.abs(ai - bi) for ai, bi in zip(self.J_fit, perm)])
             if dist < min_dist:
                 min_dist = dist
-        return min_dist
+        return min_dist / (np.sqrt(self.n))
