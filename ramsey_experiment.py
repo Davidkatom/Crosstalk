@@ -26,6 +26,16 @@ provider = IBMQ.get_provider(hub='ibm-q-research')
 h = lambda n, J, z: sum([J[i] * (z[i] - 1) * (z[(i + 1) % n] - 1) for i in range(n)])
 
 
+def func(t, *js):
+    n = len(js)
+    result = 2 * n
+    for i in range(n):
+        result += 4 * np.cos(4 * js[i] * t)
+    for i in range(n):
+        result += 2 * np.cos(4 * (js[i] + js[(i + 1) % n]) * t)
+    return result / (2 ** (n - (n - 3)))
+
+
 def effective_hem(size, J):
     hem = np.zeros((2 ** size, 2 ** size))
     for i in range(2 ** size):
@@ -101,7 +111,7 @@ class RamseyExperiment:
 
 class RamseyBatch:
 
-    def __init__(self, RamseyExperiments: "list of RamseyExperiment"):
+    def __init__(self, method, RamseyExperiments: "list of RamseyExperiment"):
         self.J = None
         self.J_fit = []
         self.delay = []
@@ -115,33 +125,38 @@ class RamseyBatch:
                 self.n = RamseyExperiment.n
             self.delay.append(RamseyExperiment.delay)
             self.Z.append(RamseyExperiment.z)
-        self.J_fit = self._calc_dist_using_fit()
+
+        if method == "curve_fit":
+            self.J_fit = self._curve_fit()
+        if method == "least_squares":
+            self.J_fit = self._least_squares()
         self.dist = self._calc_dist()
 
-    def _calc_dist_using_fit(self):
-        def func(t, *js):
-            n = len(js)
-            result = 2 * n
-            for i in range(n):
-                print(t)
-                result += 4 * np.cos(4 * js[i] * t)
-            for i in range(n):
-                result += 2 * np.cos(4 * (js[i] + js[(i + 1) % n]) * t)
-            return result / (2 ** (n - (n - 3)))
+    def _curve_fit(self):
+        initial_js = np.ones(self.n)
+        try:
+            guess, pcov = curve_fit(func, self.delay, self.Z, p0=initial_js, bounds=(0, 2))
+        except RuntimeError:
+            print(f"Failed to converge. Skipping...")
+            return list(initial_js)
+        return guess
+
+    def _least_squares(self):
 
         initial_js = np.ones(self.n)
         try:
-
-            # guess, pcov = curve_fit(func, self.delay, self.Z, p0=initial_js, bounds=(0, 2))
-
             from scipy.optimize import least_squares
             def residuals(params, t, y_obs):
-                return func(t, *params) - y_obs
+                res = []
+                for delay, z_obs in zip(t, y_obs):
+                    res.append(func(delay, *params) - z_obs)
+                return res
 
             bounds = ([0] * len(initial_js), [2] * len(initial_js))  # Bounds for the parameters
-            initial_js = [1]*self.n  # Example initial guess
 
-            guess = least_squares(residuals, initial_js, loss='huber', args=(self.delay, self.Z)).x
+            initial_js = [1] * self.n  # Example initial guess
+
+            guess = least_squares(residuals, initial_js, bounds=bounds, args=(self.delay, self.Z)).x
 
             # TODO check with theory
         except RuntimeError:
