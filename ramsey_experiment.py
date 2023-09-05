@@ -15,6 +15,7 @@ import qiskit.quantum_info as qi
 from qiskit import QuantumCircuit, transpile, Aer, IBMQ
 from scipy.linalg import expm
 from scipy.optimize import curve_fit
+from scipy.signal import find_peaks
 
 # Loading your IBM Quantum account(s)
 IBMQ.save_account(
@@ -111,7 +112,7 @@ class RamseyExperiment:
 
 class RamseyBatch:
 
-    def __init__(self, method, RamseyExperiments: "list of RamseyExperiment"):
+    def __init__(self, RamseyExperiments: "list of RamseyExperiment"):
         self.J = None
         self.J_fit = []
         self.delay = []
@@ -126,22 +127,71 @@ class RamseyBatch:
             self.delay.append(RamseyExperiment.delay)
             self.Z.append(RamseyExperiment.z)
 
-        if method == "curve_fit":
-            self.J_fit = self._curve_fit()
-        if method == "least_squares":
-            self.J_fit = self._least_squares()
-        self.dist = self._calc_dist()
+        # if method == "curve_fit":
+        #     self.J_fit = self._curve_fit()
+        # if method == "least_squares":
+        #     self.J_fit = self._least_squares()
+        # self.dist = self._calc_dist()
 
-    def _curve_fit(self):
-        initial_js = np.ones(self.n)
-        try:
-            guess, pcov = curve_fit(func, self.delay, self.Z, p0=initial_js, bounds=(0, 2))
-        except RuntimeError:
-            print(f"Failed to converge. Skipping...")
+    def fft(self):
+        initial_guess = []
+        extended = self.Z[::-1]
+        extended = extended + self.Z
+        fft_output_ext = np.fft.fft(extended)
+        sample_rate = len(self.delay) / self.delay[-1]  # Sampling rate of your data (change if known)
+        frequencies_ext = np.fft.fftfreq(2 * len(self.Z), 1 / sample_rate)
+
+        positive_indices = np.where(frequencies_ext > 0)
+        positive_magnitudes = np.abs(fft_output_ext)[positive_indices]
+        peaks, _ = find_peaks(positive_magnitudes)
+
+        # Get the magnitudes of these peaks
+        peak_magnitudes = positive_magnitudes[peaks]
+
+        # Sort the peaks by their magnitudes in descending order
+        sorted_peak_indices = np.argsort(peak_magnitudes)[::-1]
+
+        # Choose the n highest peaks
+        n_highest_peaks = sorted_peak_indices[:self.n]
+
+        for peak_index in n_highest_peaks:
+            initial_guess.append(frequencies_ext[positive_indices][peaks[peak_index]]* (0.5*np.pi))
+        initial_guess = initial_guess
+        #print(initial_guess)
+        return initial_guess
+
+    def curve_fit(self, use_fft=False):
+        if use_fft:
+            initial_js = self.fft()
+        else:
+            initial_js = np.ones(self.n)
+
+        best_guess = None
+        min_residual = float('inf')  #
+
+        # Loop over all permutations of initial_js
+        for perm in permutations(initial_js):
+            try:
+                guess, pcov = curve_fit(func, self.delay, self.Z, p0=perm, bounds=(0, 3))
+                # Compute residual for this permutation
+                residual = []
+                for i in range(len(self.Z)):
+                    residual.append((self.Z[i] - func(self.delay[i], *guess))**2)
+                residual = np.sum(residual)
+                #print(residual)
+                if residual < min_residual:
+                    min_residual = residual
+                    best_guess = guess
+            except RuntimeError:
+                continue  # If it fails to converge for this permutation, move on to the next
+
+        if best_guess is None:  # If no guess yielded a successful fit
+            print(f"Failed to converge for all permutations. Returning the original guess.")
             return list(initial_js)
-        return guess
 
-    def _least_squares(self):
+        return best_guess
+
+    def least_squares(self):
 
         initial_js = np.ones(self.n)
         try:
