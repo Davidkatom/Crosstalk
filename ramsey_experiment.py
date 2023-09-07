@@ -57,10 +57,10 @@ class RamseyExperiment:
         backend: backend to run the experiment on
     '''
 
-    def __init__(self, n, delay, shots, J, name, backend=Aer.get_backend("qasm_simulator")):
+    def __init__(self, n, delay, shots, J, name="0", backend=Aer.get_backend("qasm_simulator")):
         file_path = "experiments/" + name + ".pkl"
         self.name = name
-        if os.path.exists(f'exp/{self.name}.pkl'):
+        if os.path.exists(f'exp/{self.name}.pkl') and name != "0":
             with open(f'exp/{self.name}.pkl', 'rb') as f:
                 obj = pickle.load(f)
                 self.__dict__.update(obj.__dict__)
@@ -72,6 +72,7 @@ class RamseyExperiment:
             self.shots = shots
             self.circuit = self._create_circuit()
             self.result = self._run()
+            self.zi = []
             self.z = self._get_z_exp()
             # with open(f'exp/{self.name}.pkl', 'wb') as f:
             #    pickle.dump(self, f)
@@ -100,23 +101,29 @@ class RamseyExperiment:
         return job.result()
 
     def _get_z_exp(self):
+        Z = []
         Zi = []
         for i in range(self.n):
+            sumZ = 0
             for outcome, count in self.result.get_counts().items():
                 plus = [count if outcome[i] == '0' else 0]
                 minus = [count if outcome[i] == '1' else 0]
-                Zi.append((sum(plus) - sum(minus)) / self.shots)
-
-        return sum(Zi)  # TODO SHOULD I DIVIDE? / self.n
+                sumZ += sum(plus) - sum(minus)
+                Z.append((sum(plus) - sum(minus)) / self.shots)
+            Zi.append(sumZ/self.shots)
+        self.zi = Zi
+        return sum(Z)  # TODO SHOULD I DIVIDE? / self.n
 
 
 class RamseyBatch:
 
     def __init__(self, RamseyExperiments: "list of RamseyExperiment"):
+        self.dist = None
         self.J = None
         self.J_fit = []
         self.delay = []
         self.Z = []
+        self.Zi = []
         self.n = None
 
         self.RamseyExperiments = RamseyExperiments
@@ -126,14 +133,15 @@ class RamseyBatch:
                 self.n = RamseyExperiment.n
             self.delay.append(RamseyExperiment.delay)
             self.Z.append(RamseyExperiment.z)
+            self.Zi.append(RamseyExperiment.zi)
 
         # if method == "curve_fit":
         #     self.J_fit = self._curve_fit()
         # if method == "least_squares":
         #     self.J_fit = self._least_squares()
-        # self.dist = self._calc_dist()
 
-    def fft(self):
+
+    def full_fft(self):
         initial_guess = []
         extended = self.Z[::-1]
         extended = extended + self.Z
@@ -157,10 +165,81 @@ class RamseyBatch:
         for peak_index in n_highest_peaks:
             initial_guess.append(frequencies_ext[positive_indices][peaks[peak_index]]* (0.5*np.pi))
         initial_guess = initial_guess
-        #print(initial_guess)
+        print("Initial guess from fft: ",initial_guess)
         return initial_guess
 
-    def curve_fit(self, use_fft=False):
+    def fft(self):
+        def extract_two_closest_to_zero(frequencies, peaks):
+            """Extract the two peaks closest to zero from the given peaks."""
+            # Sort peaks based on their absolute distance to zero
+            sorted_peaks = sorted(peaks, key=lambda x: abs(frequencies[x]))
+            peaks = sorted_peaks[:2]
+            if peak_magnitudes[peaks[0]] / peak_magnitudes[peaks[1]] > 5:
+                peaks[1] = peaks[0]
+            elif(peak_magnitudes[peaks[1]] / peak_magnitudes[peaks[0]] > 5):
+                peaks[0] = peaks[1]
+            return peaks
+
+        sample_rate = len(self.delay) / self.delay[-1]  # Sampling rate of your data (change if known)
+        peak_pairs = []
+        for i in range(self.n):
+            extended = self.get_zi(i)[::-1]
+            extended = extended + self.get_zi(i)
+            fft_output_ext = np.fft.fft(extended)
+            frequencies_ext = np.fft.fftfreq(2 * len(self.get_zi(i)), 1 / sample_rate)
+
+            positive_indices = np.where(frequencies_ext > 0)
+            positive_magnitudes = np.abs(fft_output_ext)[positive_indices]
+
+            # Find peaks in the positive magnitudes
+            peaks, _ = find_peaks(positive_magnitudes)
+
+            # Get the magnitudes of these peaks
+            peak_magnitudes = positive_magnitudes[peaks]
+
+            # Sort the peaks by their magnitudes in descending order
+            sorted_peak_indices = np.argsort(peak_magnitudes)[::-1]
+            n_highest_peaks = sorted_peak_indices[:3]
+
+            # Extract two peaks closest to zero
+            selected_peaks = extract_two_closest_to_zero(frequencies_ext[positive_indices], n_highest_peaks)
+
+            freq = []
+            for peak_index in selected_peaks:
+                freq.append(frequencies_ext[positive_indices][peaks[peak_index]] * (0.5 * np.pi))
+
+            peak_pairs.append((freq[0], freq[1]))
+        #print(peak_pairs)
+
+        def find_ordered_js(peak_pairs):
+            ordered_js = []
+            n = len(peak_pairs)
+
+            # Start with the first qubit
+            current_peaks = list(peak_pairs[0])
+
+            for i in range(n):
+                next_peaks = peak_pairs[(i + 1) % n]
+
+                # Find the closest peak between the two sets
+                distances = (min([abs(current_peaks[0] - p) for p in next_peaks]),
+                             min([abs(current_peaks[1] - p) for p in next_peaks]))
+
+                if (distances[0] < distances[1]):
+                    ordered_js.append(current_peaks[0])
+                else:
+                    ordered_js.append(current_peaks[1])
+
+                current_peaks = next_peaks
+
+            return ordered_js
+
+        ordered_js = find_ordered_js(peak_pairs)
+        #print(ordered_js)
+        self.dist = self._calc_dist()
+        return ordered_js
+
+    def prem_curve_fit(self, use_fft=True):
         if use_fft:
             initial_js = self.fft()
         else:
@@ -190,6 +269,20 @@ class RamseyBatch:
             return list(initial_js)
 
         return best_guess
+
+    def curve_fit(self,use_fft=False):
+        if use_fft:
+            initial_js = self.fft()
+        else:
+            initial_js = np.ones(self.n)
+
+        try:
+            guess, pcov = curve_fit(func, self.delay, self.Z, p0=initial_js, bounds=(min(initial_js)-1, max(initial_js)+1))
+            self.J_fit = guess
+        except RuntimeError:
+            print(f"Failed to converge. Skipping...")
+            self.J_fit = list(initial_js)
+        self.dist = self._calc_dist()
 
     def least_squares(self):
 
@@ -221,3 +314,6 @@ class RamseyBatch:
             if dist < min_dist:
                 min_dist = dist
         return min_dist / (np.sqrt(self.n))
+
+    def get_zi(self, n):
+        return [sublist[n] for sublist in self.Zi]
