@@ -14,7 +14,7 @@ import qiskit as qiskit
 import qiskit.quantum_info as qi
 from qiskit import QuantumCircuit, transpile, Aer, IBMQ
 from scipy.linalg import expm
-from scipy.optimize import curve_fit
+from scipy.optimize import curve_fit, minimize
 from scipy.signal import find_peaks
 
 # Loading your IBM Quantum account(s)
@@ -37,6 +37,14 @@ def func(t, *js):
     return result / (2 ** (n - (n - 3)))
 
 
+def grad(t, *js):
+    g = []
+    for i in range(len(js)):
+        g.append(-2 * t * np.sin(4 * js[i] * t) - t * np.sin(4 * (js[i] + js[(i + 1) % len(js)]) * t) - t * np.sin(
+            4 * (js[i] + js[(i - 1) % len(js)]) * t))
+    return np.array(g)
+
+
 def effective_hem(size, J):
     hem = np.zeros((2 ** size, 2 ** size))
     for i in range(2 ** size):
@@ -57,7 +65,7 @@ class RamseyExperiment:
         backend: backend to run the experiment on
     '''
 
-    def __init__(self, n, delay, shots, J, name="0", backend=Aer.get_backend("qasm_simulator")):
+    def __init__(self, n, delay, shots, J, name="0", backend=Aer.get_backend("qasm_simulator"), manual=False):
         file_path = "experiments/" + name + ".pkl"
         self.name = name
         if os.path.exists(f'exp/{self.name}.pkl') and name != "0":
@@ -68,14 +76,18 @@ class RamseyExperiment:
             self.delay = delay
             self.n = n
             self.J = J
-            self.backend = backend
-            self.shots = shots
-            self.circuit = self._create_circuit()
-            self.result = self._run()
             self.zi = []
-            self.z = self._get_z_exp()
+            self.shots = shots
+            if not manual:
+                self.backend = backend
+                self.circuit = self._create_circuit()
+                self.result = self._run()
+                self.z = self._get_z_exp()
             # with open(f'exp/{self.name}.pkl', 'wb') as f:
             #    pickle.dump(self, f)
+            else:
+                self.z = 0
+                self._manuel_run()
 
     def _create_circuit(self):
         q = QuantumRegister(self.n)
@@ -110,9 +122,20 @@ class RamseyExperiment:
                 minus = [count if outcome[i] == '1' else 0]
                 sumZ += sum(plus) - sum(minus)
                 Z.append((sum(plus) - sum(minus)) / self.shots)
-            Zi.append(sumZ/self.shots)
+            Zi.append(sumZ / self.shots)
         self.zi = Zi
         return sum(Z)  # TODO SHOULD I DIVIDE? / self.n
+
+    def _manuel_run(self):
+        Zi = []
+        for i in range(self.n):
+            zi = 1 / 4
+            zi = zi * (1 + np.cos(4 * self.J[i] * self.delay) + np.cos(
+                4 * (self.J[i] + self.J[(i - 1) % self.n]) * self.delay) + np.cos(
+                4 * self.J[(i - 1) % self.n] * self.delay))
+            Zi.append(zi)
+        self.z = sum(Zi)
+        self.zi = Zi
 
 
 class RamseyBatch:
@@ -134,12 +157,10 @@ class RamseyBatch:
             self.delay.append(RamseyExperiment.delay)
             self.Z.append(RamseyExperiment.z)
             self.Zi.append(RamseyExperiment.zi)
-
         # if method == "curve_fit":
         #     self.J_fit = self._curve_fit()
         # if method == "least_squares":
         #     self.J_fit = self._least_squares()
-
 
     def full_fft(self):
         initial_guess = []
@@ -163,9 +184,9 @@ class RamseyBatch:
         n_highest_peaks = sorted_peak_indices[:self.n]
 
         for peak_index in n_highest_peaks:
-            initial_guess.append(frequencies_ext[positive_indices][peaks[peak_index]]* (0.5*np.pi))
+            initial_guess.append(frequencies_ext[positive_indices][peaks[peak_index]] * (0.5 * np.pi))
         initial_guess = initial_guess
-        print("Initial guess from fft: ",initial_guess)
+        print("Initial guess from fft: ", initial_guess)
         return initial_guess
 
     def fft(self):
@@ -176,7 +197,7 @@ class RamseyBatch:
             peaks = sorted_peaks[:2]
             if peak_magnitudes[peaks[0]] / peak_magnitudes[peaks[1]] > 5:
                 peaks[1] = peaks[0]
-            elif(peak_magnitudes[peaks[1]] / peak_magnitudes[peaks[0]] > 5):
+            elif peak_magnitudes[peaks[1]] / peak_magnitudes[peaks[0]] > 5:
                 peaks[0] = peaks[1]
             return peaks
 
@@ -209,7 +230,6 @@ class RamseyBatch:
                 freq.append(frequencies_ext[positive_indices][peaks[peak_index]] * (0.5 * np.pi))
 
             peak_pairs.append((freq[0], freq[1]))
-        #print(peak_pairs)
 
         def find_ordered_js(peak_pairs):
             ordered_js = []
@@ -220,7 +240,6 @@ class RamseyBatch:
 
             for i in range(n):
                 next_peaks = peak_pairs[(i + 1) % n]
-
                 # Find the closest peak between the two sets
                 distances = (min([abs(current_peaks[0] - p) for p in next_peaks]),
                              min([abs(current_peaks[1] - p) for p in next_peaks]))
@@ -235,54 +254,60 @@ class RamseyBatch:
             return ordered_js
 
         ordered_js = find_ordered_js(peak_pairs)
-        #print(ordered_js)
-        self.dist = self._calc_dist()
+        # self.dist = self._calc_dist()
         return ordered_js
 
-    def prem_curve_fit(self, use_fft=True):
+    def curve_fit_grad(self, use_fft=False):
+        def objective_function(params, x, y, func, grad_func):
+            # Compute the predicted values
+            predicted_y = func(x, *params)
+
+            # Compute and return the sum of squared residuals
+            residuals = y - predicted_y
+            return np.sum(residuals ** 2)
+
+        def gradient_objective_function(params, x, y, func, grad_func):
+
+            # Compute the residuals
+            residuals = y - func(x, *params)
+
+            # Compute the gradient of the model function
+            grad_f = grad_func(x, *params)
+
+            # Compute the gradient of the objective function
+            grad_objective = -2 * np.dot(residuals, grad_f)
+
+            return grad_objective
         if use_fft:
             initial_js = self.fft()
+            print("Finished FFT")
         else:
             initial_js = np.ones(self.n)
 
-        best_guess = None
-        min_residual = float('inf')  #
+        result = minimize(
+            objective_function, initial_js,
+            jac=gradient_objective_function,
+            args=(self.delay, self.Z, func, grad),
+            method='L-BFGS-B'
+        )
+        self.J_fit = result.x
 
-        # Loop over all permutations of initial_js
-        for perm in permutations(initial_js):
-            try:
-                guess, pcov = curve_fit(func, self.delay, self.Z, p0=perm, bounds=(0, 3))
-                # Compute residual for this permutation
-                residual = []
-                for i in range(len(self.Z)):
-                    residual.append((self.Z[i] - func(self.delay[i], *guess))**2)
-                residual = np.sum(residual)
-                #print(residual)
-                if residual < min_residual:
-                    min_residual = residual
-                    best_guess = guess
-            except RuntimeError:
-                continue  # If it fails to converge for this permutation, move on to the next
-
-        if best_guess is None:  # If no guess yielded a successful fit
-            print(f"Failed to converge for all permutations. Returning the original guess.")
-            return list(initial_js)
-
-        return best_guess
-
-    def curve_fit(self,use_fft=False):
+    def curve_fit(self, use_fft=False):
         if use_fft:
             initial_js = self.fft()
+            print("Finished FFT")
         else:
             initial_js = np.ones(self.n)
 
         try:
-            guess, pcov = curve_fit(func, self.delay, self.Z, p0=initial_js, bounds=(min(initial_js)-1, max(initial_js)+1))
+            guess, pcov = curve_fit(func, self.delay, self.Z, p0=initial_js,
+                                    bounds=(min(initial_js) - 1, max(initial_js) + 1), method='dogbox')
             self.J_fit = guess
         except RuntimeError:
             print(f"Failed to converge. Skipping...")
             self.J_fit = list(initial_js)
         self.dist = self._calc_dist()
+        print("Finished curve_fit")
 
     def least_squares(self):
 
@@ -308,12 +333,8 @@ class RamseyBatch:
         return guess
 
     def _calc_dist(self):
-        min_dist = float('inf')
-        for perm in permutations(self.J):
-            dist = np.sum([np.abs(ai - bi) for ai, bi in zip(self.J_fit, perm)])
-            if dist < min_dist:
-                min_dist = dist
-        return min_dist / (np.sqrt(self.n))
+        distance = np.sqrt(np.sum((self.J - self.J_fit) ** 2))
+        return distance / (np.sqrt(self.n))
 
     def get_zi(self, n):
         return [sublist[n] for sublist in self.Zi]
