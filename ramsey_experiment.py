@@ -145,7 +145,7 @@ class RamseyExperiment:
             #    pickle.dump(self, f)
             else:
                 self.z = 0
-                self._manuel_run()
+                self._manuel_run(shots)
 
     def _create_circuit(self):
         q = QuantumRegister(self.n)
@@ -184,13 +184,36 @@ class RamseyExperiment:
         self.zi = Zi
         return sum(Z)  # TODO SHOULD I DIVIDE? / self.n
 
-    def _manuel_run(self):
+    # def _manuel_run(self, shots):
+    #     Zi = []
+    #     for i in range(self.n):
+    #         zi = 1 / 4
+    #         zi = zi * (1 + np.cos(4 * self.J[i] * self.delay) + np.cos(
+    #             4 * (self.J[i] + self.J[(i - 1) % self.n]) * self.delay) + np.cos(
+    #             4 * self.J[(i - 1) % self.n] * self.delay))
+    #         Zi.append(zi)
+    #     self.z = sum(Zi)
+    #     self.zi = Zi
+
+    def _manuel_run(self, shots):
         Zi = []
         for i in range(self.n):
             zi = 1 / 4
             zi = zi * (1 + np.cos(4 * self.J[i] * self.delay) + np.cos(
                 4 * (self.J[i] + self.J[(i - 1) % self.n]) * self.delay) + np.cos(
                 4 * self.J[(i - 1) % self.n] * self.delay))
+
+            # Calculate the probability of measuring |0> and |1>
+            p0 = (zi + 1) / 2
+            p1 = 1 - p0
+
+            # Simulate shot noise by sampling from a binomial distribution
+            n0 = np.random.binomial(shots, p0)
+            n1 = shots - n0
+
+            # Update zi using sampled shot results
+            zi = (n0 - n1) / shots
+
             Zi.append(zi)
         self.z = sum(Zi)
         self.zi = Zi
