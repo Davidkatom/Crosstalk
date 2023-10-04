@@ -14,8 +14,9 @@ import qiskit as qiskit
 import qiskit.quantum_info as qi
 from qiskit import QuantumCircuit, transpile, Aer, IBMQ
 from scipy.linalg import expm
-from scipy.optimize import curve_fit, minimize
+from scipy.optimize import curve_fit, minimize, differential_evolution
 from scipy.signal import find_peaks
+from tqdm import tqdm
 
 # Loading your IBM Quantum account(s)
 IBMQ.save_account(
@@ -37,12 +38,42 @@ def func(t, *js):
     return result / (2 ** (n - (n - 3)))
 
 
-def grad(t, *js):
-    g = []
-    for i in range(len(js)):
-        g.append(-2 * t * np.sin(4 * js[i] * t) - t * np.sin(4 * (js[i] + js[(i + 1) % len(js)]) * t) - t * np.sin(
-            4 * (js[i] + js[(i - 1) % len(js)]) * t))
-    return np.array(g)
+def analytical_function(t, *js):
+    t = np.asarray(t)  # Ensure t is a numpy array
+    n = len(js)
+    result = 2 * n
+    for i in range(n):
+        result += 4 * np.cos(4 * js[i] * t)
+    for i in range(n):
+        result += 2 * np.cos(4 * (js[i] + js[(i + 1) % n]) * t)
+    return result / 8
+
+
+def objective_function(params, t_values, y_values):
+    residuals = y_values - analytical_function(t_values, *params)
+    return np.sum(residuals ** 2)
+
+
+def jacobian(params, t_values, y_values):
+    # Initialize a gradient vector with zeros
+    grad = np.zeros_like(params)
+    js = params
+    # Compute the residuals
+    residuals = y_values - analytical_function(t_values, *params)
+    t = np.asarray(t_values)  # Ensure t is a numpy array
+
+    # Loop over each parameter to compute the gradient
+    for i in range(len(params)):
+        # Compute the partial derivative of func with respect to params[i]
+        # This should be implemented based on your analytical derivative
+        partial_derivative = -2 * t * np.sin(4 * js[i] * t) - t * np.sin(
+            4 * (js[i] + js[(i + 1) % len(js)]) * t) - t * np.sin(
+            4 * (js[i] + js[(i - 1) % len(js)]) * t)
+
+        # Update the gradient
+        grad[i] = -2 * np.sum(residuals * partial_derivative)
+
+    return grad
 
 
 def effective_hem(size, J):
@@ -157,37 +188,6 @@ class RamseyBatch:
             self.delay.append(RamseyExperiment.delay)
             self.Z.append(RamseyExperiment.z)
             self.Zi.append(RamseyExperiment.zi)
-        # if method == "curve_fit":
-        #     self.J_fit = self._curve_fit()
-        # if method == "least_squares":
-        #     self.J_fit = self._least_squares()
-
-    def full_fft(self):
-        initial_guess = []
-        extended = self.Z[::-1]
-        extended = extended + self.Z
-        fft_output_ext = np.fft.fft(extended)
-        sample_rate = len(self.delay) / self.delay[-1]  # Sampling rate of your data (change if known)
-        frequencies_ext = np.fft.fftfreq(2 * len(self.Z), 1 / sample_rate)
-
-        positive_indices = np.where(frequencies_ext > 0)
-        positive_magnitudes = np.abs(fft_output_ext)[positive_indices]
-        peaks, _ = find_peaks(positive_magnitudes)
-
-        # Get the magnitudes of these peaks
-        peak_magnitudes = positive_magnitudes[peaks]
-
-        # Sort the peaks by their magnitudes in descending order
-        sorted_peak_indices = np.argsort(peak_magnitudes)[::-1]
-
-        # Choose the n highest peaks
-        n_highest_peaks = sorted_peak_indices[:self.n]
-
-        for peak_index in n_highest_peaks:
-            initial_guess.append(frequencies_ext[positive_indices][peaks[peak_index]] * (0.5 * np.pi))
-        initial_guess = initial_guess
-        print("Initial guess from fft: ", initial_guess)
-        return initial_guess
 
     def fft(self):
         def extract_two_closest_to_zero(frequencies, peaks):
@@ -257,42 +257,71 @@ class RamseyBatch:
         # self.dist = self._calc_dist()
         return ordered_js
 
-    def curve_fit_grad(self, use_fft=False):
-        def objective_function(params, x, y, func, grad_func):
-            # Compute the predicted values
-            predicted_y = func(x, *params)
-
-            # Compute and return the sum of squared residuals
-            residuals = y - predicted_y
-            return np.sum(residuals ** 2)
-
-        def gradient_objective_function(params, x, y, func, grad_func):
-
-            # Compute the residuals
-            residuals = y - func(x, *params)
-
-            # Compute the gradient of the model function
-            grad_f = grad_func(x, *params)
-
-            # Compute the gradient of the objective function
-            grad_objective = -2 * np.dot(residuals, grad_f)
-
-            return grad_objective
+    def local_curve_fit(self, use_fft=True):
         if use_fft:
             initial_js = self.fft()
             print("Finished FFT")
         else:
             initial_js = np.ones(self.n)
+        print("Fitting...")
+        Jfit = []
 
+        def local_func(t, j1, j2, j3):
+            result = 1 / 4 * (1 + np.cos(4 * j1 * t) + np.cos(4 * (j1 + j2) * t) + np.cos(4 * j2 * t))
+            result += 1 / 4 * (1 + np.cos(4 * j2 * t) + np.cos(4 * (j3 + j2) * t) + np.cos(4 * j3 * t))
+            return result
+        failed = 0
+        for i in tqdm(range(self.n), desc="local curve fitting"):
+            try:
+                values = [a+b for a, b in zip(self.get_zi(i), self.get_zi((i+1) % self.n))]
+                popt, pcov = curve_fit(local_func, self.delay, values,
+                                       p0=[initial_js[(i - 1) % self.n], initial_js[i], initial_js[(i + 1) % self.n]])
+                Jfit.append(popt[1])
+            except RuntimeError:
+                #print(f"Failed to converge. Skipping...")
+                failed += 1
+                self.J_fit = list(initial_js)
+                Jfit.append(initial_js[i])
+            # print(popt[0])
+        print("Finished fitting")
+        print(f"Failed to converge {failed} times")
+
+        self.J_fit = np.array(Jfit)
+        self.dist = self._calc_dist()
+
+    def differential_evolution(self, use_fft=True):
+        if use_fft:
+            initial_js = self.fft()
+            print("Finished FFT")
+        else:
+            initial_js = np.ones(self.n)
+        print("Fitting...")
+        result_de = differential_evolution(
+            objective_function,
+            bounds=[(0, 200)] * self.n,  # Specify bounds for each parameter
+            args=(self.delay, self.Z), workers=-1)
+        print("Finished fitting")
+        self.J_fit = result_de.x
+
+    def minimize_grad(self, use_fft=True):
+        if use_fft:
+            initial_js = self.fft()
+            print("Finished FFT")
+        else:
+            initial_js = np.ones(self.n)
+        print("Fitting...")
         result = minimize(
-            objective_function, initial_js,
-            jac=gradient_objective_function,
-            args=(self.delay, self.Z, func, grad),
-            method='L-BFGS-B'
+            fun=objective_function,
+            x0=initial_js,
+            args=(self.delay, self.Z),
+            jac=jacobian,  # Include the Jacobian
+            method='BFGS'  # Or another suitable method
         )
+        print("Finished fitting")
         self.J_fit = result.x
+        self.dist = self._calc_dist()
 
-    def curve_fit(self, use_fft=False):
+    def curve_fit(self, use_fft=True):
         if use_fft:
             initial_js = self.fft()
             print("Finished FFT")
@@ -300,8 +329,10 @@ class RamseyBatch:
             initial_js = np.ones(self.n)
 
         try:
+            print("Fitting...")
             guess, pcov = curve_fit(func, self.delay, self.Z, p0=initial_js,
-                                    bounds=(min(initial_js) - 1, max(initial_js) + 1), method='dogbox')
+                                    bounds=(min(initial_js) - 1, max(initial_js) + 1))
+            print("Finished fitting")
             self.J_fit = guess
         except RuntimeError:
             print(f"Failed to converge. Skipping...")
