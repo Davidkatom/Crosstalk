@@ -76,6 +76,33 @@ def jacobian(params, t_values, y_values):
     return grad
 
 
+def local_analytical_function(t, j1, j2, j3):
+    t = np.asarray(t)  # Ensure t is a numpy array
+    result = 1 / 4 * (1 + np.cos(4 * j1 * t) + np.cos(4 * (j1 + j2) * t) + np.cos(4 * j2 * t))
+    result += 1 / 4 * (1 + np.cos(4 * j2 * t) + np.cos(4 * (j3 + j2) * t) + np.cos(4 * j3 * t))
+    return result
+
+
+def local_objective_function(params, t_values, y_values):
+    residuals = y_values - local_analytical_function(t_values, *params)
+    return np.sum(residuals ** 2)
+
+
+def local_jacobian(params, t_values, y_values):
+    # Initialize a gradient vector with zeros
+    grad = np.zeros_like(params)
+    js = params
+    # Compute the residuals
+    residuals = y_values - local_analytical_function(t_values, *params)
+    t = np.asarray(t_values)  # Ensure t is a numpy array
+    grad[0] = -2 * np.sum(residuals * (-np.sin(4 * js[0] * t) * t - np.sin(4 * (js[0] + js[1]) * t) * t))
+    grad[1] = -2 * np.sum(residuals * (-np.sin(4 * (js[0] + js[1]) * t) * t - 2 * np.sin(4 * js[1] * t) * t - np.sin(
+        4 * (js[1] + js[2]) * t) * t))
+    grad[2] = -2 * np.sum(residuals * (-np.sin(4 * (js[1] + js[2]) * t) * t - np.sin(4 * js[2] * t) * t))
+
+    return grad
+
+
 def effective_hem(size, J):
     hem = np.zeros((2 ** size, 2 ** size))
     for i in range(2 ** size):
@@ -257,7 +284,7 @@ class RamseyBatch:
         # self.dist = self._calc_dist()
         return ordered_js
 
-    def local_curve_fit(self, use_fft=True):
+    def local_minimize_grad(self, use_fft=True):
         if use_fft:
             initial_js = self.fft()
             print("Finished FFT")
@@ -265,27 +292,58 @@ class RamseyBatch:
             initial_js = np.ones(self.n)
         print("Fitting...")
         Jfit = []
+        for i in tqdm(range(self.n), desc="local curve fitting"):
+            values = [a + b for a, b in zip(self.get_zi(i), self.get_zi((i + 1) % self.n))]
+
+            result = minimize(
+                fun=local_objective_function,
+                x0=np.array([initial_js[(i - 1) % self.n], initial_js[i], initial_js[(i + 1) % self.n]]),
+                args=(self.delay, values),
+                jac=local_jacobian,  # Include the Jacobian
+                method='BFGS'  # Or another suitable method
+            )
+            Jfit.append(result.x[1])
+
+        print("Finished fitting")
+        self.J_fit = np.array(Jfit)
+        self.dist = self._calc_dist()
+
+    def local_curve_fit(self, use_fft=True):
+        if use_fft:
+            initial_js = self.fft()
+            print("Finished FFT")
+        else:
+            initial_js = np.ones(self.n)
+        print("Fitting...")
+        Jfit = [[] for _ in range(self.n)]
 
         def local_func(t, j1, j2, j3):
             result = 1 / 4 * (1 + np.cos(4 * j1 * t) + np.cos(4 * (j1 + j2) * t) + np.cos(4 * j2 * t))
             result += 1 / 4 * (1 + np.cos(4 * j2 * t) + np.cos(4 * (j3 + j2) * t) + np.cos(4 * j3 * t))
             return result
+
         failed = 0
         for i in tqdm(range(self.n), desc="local curve fitting"):
             try:
-                values = [a+b for a, b in zip(self.get_zi(i), self.get_zi((i+1) % self.n))]
+                values = [a + b for a, b in zip(self.get_zi(i), self.get_zi((i + 1) % self.n))]
                 popt, pcov = curve_fit(local_func, self.delay, values,
                                        p0=[initial_js[(i - 1) % self.n], initial_js[i], initial_js[(i + 1) % self.n]])
-                Jfit.append(popt[1])
+                # Jfit.append(popt[1])
+                Jfit[i - 1].append(popt[0])
+                Jfit[i].append(popt[1])
+                Jfit[(i + 1) % self.n].append(popt[2])
+
             except RuntimeError:
-                #print(f"Failed to converge. Skipping...")
+                # print(f"Failed to converge. Skipping...")
                 failed += 1
-                self.J_fit = list(initial_js)
-                Jfit.append(initial_js[i])
+                #Jfit.append(initial_js[i])
+                Jfit[i - 1].append(initial_js[i-1])
+                Jfit[i].append(initial_js[i])
+                Jfit[(i + 1) % self.n].append(initial_js[(i + 1) % self.n])
             # print(popt[0])
         print("Finished fitting")
         print(f"Failed to converge {failed} times")
-
+        Jfit = [np.median(j) for j in Jfit]
         self.J_fit = np.array(Jfit)
         self.dist = self._calc_dist()
 
