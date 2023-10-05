@@ -310,10 +310,10 @@ class RamseyBatch:
     def local_minimize_grad(self, use_fft=True):
         if use_fft:
             initial_js = self.fft()
-            print("Finished FFT")
+            #print("Finished FFT")
         else:
             initial_js = np.ones(self.n)
-        print("Fitting...")
+        #print("Fitting...")
         Jfit = []
         for i in tqdm(range(self.n), desc="local curve fitting"):
             values = [a + b for a, b in zip(self.get_zi(i), self.get_zi((i + 1) % self.n))]
@@ -327,7 +327,7 @@ class RamseyBatch:
             )
             Jfit.append(result.x[1])
 
-        print("Finished fitting")
+        #print("Finished fitting")
         self.J_fit = np.array(Jfit)
         self.dist = self._calc_dist()
 
@@ -405,44 +405,32 @@ class RamseyBatch:
     def curve_fit(self, use_fft=True):
         if use_fft:
             initial_js = self.fft()
-            print("Finished FFT")
+            #print("Finished FFT")
         else:
             initial_js = np.ones(self.n)
 
         try:
-            print("Fitting...")
+            #print("Fitting...")
             guess, pcov = curve_fit(func, self.delay, self.Z, p0=initial_js,
                                     bounds=(min(initial_js) - 1, max(initial_js) + 1))
-            print("Finished fitting")
+            #print("Finished fitting")
             self.J_fit = guess
         except RuntimeError:
             print(f"Failed to converge. Skipping...")
             self.J_fit = list(initial_js)
         self.dist = self._calc_dist()
-        print("Finished curve_fit")
+        #print("Finished curve_fit")
 
-    def least_squares(self):
+    def no_fit(self, use_fft=True):
+        if use_fft:
+            initial_js = self.fft()
+            #print("Finished FFT")
+        else:
+            initial_js = np.ones(self.n)
 
-        initial_js = np.ones(self.n)
-        try:
-            from scipy.optimize import least_squares
-            def residuals(params, t, y_obs):
-                res = []
-                for delay, z_obs in zip(t, y_obs):
-                    res.append(func(delay, *params) - z_obs)
-                return res
-
-            bounds = ([0] * len(initial_js), [2] * len(initial_js))  # Bounds for the parameters
-
-            initial_js = [1] * self.n  # Example initial guess
-
-            guess = least_squares(residuals, initial_js, bounds=bounds, args=(self.delay, self.Z)).x
-
-            # TODO check with theory
-        except RuntimeError:
-            print(f"Failed to converge. Skipping...")
-            return list(initial_js)
-        return guess
+        self.J_fit = np.array(initial_js)
+        self.dist = self._calc_dist()
+        # print("Finished curve_fit")
 
     def _calc_dist(self):
         distance = np.sqrt(np.sum((self.J - self.J_fit) ** 2))
