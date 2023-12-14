@@ -307,13 +307,56 @@ class RamseyBatch:
         # self.dist = self._calc_dist()
         return ordered_js
 
+    def doulbe_fft(self):
+        def extract_two_closest_to_zero(frequencies, peaks):
+            """Extract the two peaks closest to zero from the given peaks."""
+            # Sort peaks based on their absolute distance to zero
+            sorted_peaks = sorted(peaks, key=lambda x: abs(frequencies[x]))
+            return sorted_peaks[:2]
+
+        sample_rate = len(self.delay) / self.delay[-1]  # Sampling rate of your data (change if known)
+        ordered_js = []
+        for i in range(self.n):
+            extended1 = self.get_zi(i)[::-1]
+            extended1 = extended1 + self.get_zi(i)
+
+            extended2 = self.get_zi((i + 1) % self.n)[::-1]
+            extended2 = extended2 + self.get_zi((i + 1) % self.n)
+
+            extended = [a + b for a, b in zip(extended1, extended2)]
+
+            fft_output_ext = np.fft.fft(extended)
+            frequencies_ext = np.fft.fftfreq(2 * len(self.get_zi(i)), 1 / sample_rate)
+
+            positive_indices = np.where(frequencies_ext > 0)
+            positive_magnitudes = np.abs(fft_output_ext)[positive_indices]
+
+            # Find peaks in the positive magnitudes
+            peaks, _ = find_peaks(positive_magnitudes)
+
+            # Get the magnitudes of these peaks
+            peak_magnitudes = positive_magnitudes[peaks]
+
+            # Sort the peaks by their magnitudes in descending order
+            sorted_peak_indices = np.argsort(peak_magnitudes)[::-1]
+            n_highest_peaks = sorted_peak_indices[:1]
+
+            # Extract two peaks closest to zero
+            selected_peaks = extract_two_closest_to_zero(frequencies_ext[positive_indices], n_highest_peaks)
+
+            freq = []
+            for peak_index in selected_peaks:
+                ordered_js.append(frequencies_ext[positive_indices][peaks[peak_index]] * (0.5 * np.pi))
+
+        return ordered_js
+
     def local_minimize_grad(self, use_fft=True):
         if use_fft:
             initial_js = self.fft()
-            #print("Finished FFT")
+            # print("Finished FFT")
         else:
             initial_js = np.ones(self.n)
-        #print("Fitting...")
+        # print("Fitting...")
         Jfit = []
         for i in tqdm(range(self.n), desc="local curve fitting"):
             values = [a + b for a, b in zip(self.get_zi(i), self.get_zi((i + 1) % self.n))]
@@ -327,7 +370,7 @@ class RamseyBatch:
             )
             Jfit.append(result.x[1])
 
-        #print("Finished fitting")
+        # print("Finished fitting")
         self.J_fit = np.array(Jfit)
         self.dist = self._calc_dist()
 
@@ -359,8 +402,8 @@ class RamseyBatch:
             except RuntimeError:
                 # print(f"Failed to converge. Skipping...")
                 failed += 1
-                #Jfit.append(initial_js[i])
-                Jfit[i - 1].append(initial_js[i-1])
+                # Jfit.append(initial_js[i])
+                Jfit[i - 1].append(initial_js[i - 1])
                 Jfit[i].append(initial_js[i])
                 Jfit[(i + 1) % self.n].append(initial_js[(i + 1) % self.n])
             # print(popt[0])
@@ -405,32 +448,44 @@ class RamseyBatch:
     def curve_fit(self, use_fft=True):
         if use_fft:
             initial_js = self.fft()
-            #print("Finished FFT")
+            # print("Finished FFT")
         else:
             initial_js = np.ones(self.n)
 
         try:
-            #print("Fitting...")
+            # print("Fitting...")
             guess, pcov = curve_fit(func, self.delay, self.Z, p0=initial_js,
                                     bounds=(min(initial_js) - 1, max(initial_js) + 1))
-            #print("Finished fitting")
+            # print("Finished fitting")
             self.J_fit = guess
         except RuntimeError:
             print(f"Failed to converge. Skipping...")
             self.J_fit = list(initial_js)
         self.dist = self._calc_dist()
-        #print("Finished curve_fit")
+        # print("Finished curve_fit")
 
     def no_fit(self, use_fft=True):
         if use_fft:
             initial_js = self.fft()
-            #print("Finished FFT")
+            # print("Finished FFT")
         else:
             initial_js = np.ones(self.n)
 
         self.J_fit = np.array(initial_js)
         self.dist = self._calc_dist()
         # print("Finished curve_fit")
+
+    def no_fit_double(self, use_fft=True):
+        if use_fft:
+            initial_js = self.doulbe_fft()
+            # print("Finished FFT")
+        else:
+            initial_js = np.ones(self.n)
+
+        self.J_fit = np.array(initial_js)
+        self.dist = self._calc_dist()
+        # print("Finished curve_fit")
+
 
     def _calc_dist(self):
         distance = np.sqrt(np.sum((self.J - self.J_fit) ** 2))
