@@ -307,7 +307,7 @@ class RamseyBatch:
         # self.dist = self._calc_dist()
         return ordered_js
 
-    def doulbe_fft(self):
+    def double_fft(self):
         def extract_two_closest_to_zero(frequencies, peaks):
             """Extract the two peaks closest to zero from the given peaks."""
             # Sort peaks based on their absolute distance to zero
@@ -348,6 +348,68 @@ class RamseyBatch:
             for peak_index in selected_peaks:
                 ordered_js.append(frequencies_ext[positive_indices][peaks[peak_index]] * (0.5 * np.pi))
 
+        return ordered_js
+
+    def double_fft_mult(self):
+        def extract_two_closest_to_zero(frequencies, peaks):
+            """Extract the two peaks closest to zero from the given peaks."""
+            # Sort peaks based on their absolute distance to zero
+            sorted_peaks = sorted(peaks, key=lambda x: abs(frequencies[x]))
+            return sorted_peaks[:2]
+
+        sample_rate = len(self.delay) / self.delay[-1]  # Sampling rate of your data (change if known)
+        ordered_js = []
+        for i in range(self.n):
+            extended1 = self.get_zi(i)[::-1]
+            extended1 = extended1 + self.get_zi(i)
+
+            fft_output_ext1 = np.fft.fft(extended1)
+
+            extended2 = self.get_zi((i + 1) % self.n)[::-1]
+            extended2 = extended2 + self.get_zi((i + 1) % self.n)
+
+            fft_output_ext2 = np.fft.fft(extended2)
+
+            fft_output_ext = [a * b for a, b in zip(fft_output_ext1, fft_output_ext2)]
+
+            frequencies_ext = np.fft.fftfreq(2 * len(self.get_zi(i)), 1 / sample_rate)
+
+            positive_indices = np.where(frequencies_ext > 0)
+            positive_magnitudes = np.abs(fft_output_ext)[positive_indices]
+
+            # Find peaks in the positive magnitudes
+            peaks, _ = find_peaks(positive_magnitudes)
+
+            # Get only the peaks where the magnitude is above 3
+            # TODO figure out the exact number
+            #peaks = [peak for peak in peaks if positive_magnitudes[peak] > 10]
+
+            peak_magnitudes = positive_magnitudes[peaks]
+            peaks = np.argsort(peak_magnitudes)[::-1]
+            ordered_js.append(frequencies_ext[positive_indices][peaks[0]] * (0.5 * np.pi))
+
+            # if len(peaks) <= 2:
+            #     ordered_js.append(frequencies_ext[positive_indices][peaks[0]] * (0.5 * np.pi))
+            #     continue
+            # else:
+            #     # Get the magnitudes of these peaks
+            #     peak_magnitudes = positive_magnitudes[peaks]
+            #
+            #     # Sort the peaks by their magnitudes in descending order
+            #     sorted_peak_indices = np.argsort(peak_magnitudes)[::-1]
+            #     n_highest_peaks = sorted_peak_indices[:3]
+            #
+            #     # Extract two peaks closest to zero
+            #     selected_peaks = extract_two_closest_to_zero(frequencies_ext[positive_indices], n_highest_peaks)
+            #
+            #     peak_magnitudes = positive_magnitudes[selected_peaks]
+            #     selected_peaks = np.argsort(peak_magnitudes)[::-1]
+            #
+            #     freq = []
+            #
+            #     for peak_index in selected_peaks:
+            #         freq.append(frequencies_ext[positive_indices][peaks[peak_index]] * (0.5 * np.pi))
+            #     ordered_js.append(freq[1])
         return ordered_js
 
     def local_minimize_grad(self, use_fft=True):
@@ -477,7 +539,7 @@ class RamseyBatch:
 
     def no_fit_double(self, use_fft=True):
         if use_fft:
-            initial_js = self.doulbe_fft()
+            initial_js = self.double_fft()
             # print("Finished FFT")
         else:
             initial_js = np.ones(self.n)
@@ -486,6 +548,16 @@ class RamseyBatch:
         self.dist = self._calc_dist()
         # print("Finished curve_fit")
 
+    def no_fit_double_mult(self, use_fft=True):
+        if use_fft:
+            initial_js = self.double_fft_mult()
+            # print("Finished FFT")
+        else:
+            initial_js = np.ones(self.n)
+
+        self.J_fit = np.array(initial_js)
+        self.dist = self._calc_dist()
+        # print("Finished curve_fit")
 
     def _calc_dist(self):
         distance = np.sqrt(np.sum((self.J - self.J_fit) ** 2))
