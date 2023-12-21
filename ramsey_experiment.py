@@ -239,6 +239,13 @@ class RamseyBatch:
             self.Z.append(RamseyExperiment.z)
             self.Zi.append(RamseyExperiment.zi)
 
+    def add_noise(self, decay_time):
+        #decay_time_i = [random.gauss(decay_time, 0.4) for _ in range(self.n)]
+        for i in range(len(self.Zi)):
+            self.Zi[i] = [self.Zi[i][j]*np.exp(-self.delay[j]/decay_time) for j in range(len(self.Zi[i]))]
+
+
+
     def fft(self):
         def extract_two_closest_to_zero(frequencies, peaks):
             """Extract the two peaks closest to zero from the given peaks."""
@@ -380,36 +387,20 @@ class RamseyBatch:
             # Find peaks in the positive magnitudes
             peaks, _ = find_peaks(positive_magnitudes)
 
-            # Get only the peaks where the magnitude is above 3
             # TODO figure out the exact number
-            #peaks = [peak for peak in peaks if positive_magnitudes[peak] > 10]
 
             peak_magnitudes = positive_magnitudes[peaks]
-            peaks = np.argsort(peak_magnitudes)[::-1]
-            ordered_js.append(frequencies_ext[positive_indices][peaks[0]] * (0.5 * np.pi))
+            sorted_peak_indices = np.argsort(peak_magnitudes)[::-1]
+            n_highest_peaks = sorted_peak_indices[:1]
+            selected_peaks = extract_two_closest_to_zero(frequencies_ext[positive_indices], n_highest_peaks)
 
-            # if len(peaks) <= 2:
-            #     ordered_js.append(frequencies_ext[positive_indices][peaks[0]] * (0.5 * np.pi))
-            #     continue
-            # else:
-            #     # Get the magnitudes of these peaks
-            #     peak_magnitudes = positive_magnitudes[peaks]
-            #
-            #     # Sort the peaks by their magnitudes in descending order
-            #     sorted_peak_indices = np.argsort(peak_magnitudes)[::-1]
-            #     n_highest_peaks = sorted_peak_indices[:3]
-            #
-            #     # Extract two peaks closest to zero
-            #     selected_peaks = extract_two_closest_to_zero(frequencies_ext[positive_indices], n_highest_peaks)
-            #
-            #     peak_magnitudes = positive_magnitudes[selected_peaks]
-            #     selected_peaks = np.argsort(peak_magnitudes)[::-1]
-            #
-            #     freq = []
-            #
-            #     for peak_index in selected_peaks:
-            #         freq.append(frequencies_ext[positive_indices][peaks[peak_index]] * (0.5 * np.pi))
-            #     ordered_js.append(freq[1])
+            for peak_index in selected_peaks:
+                freq_value = frequencies_ext[positive_indices][peaks[peak_index]]
+                magnitude_value = peak_magnitudes[peak_index]
+                ordered_js.append(freq_value * (0.5 * np.pi))
+
+            #ordered_js.append(frequencies_ext[positive_indices][peaks[0]] * (0.5 * np.pi))
+
         return ordered_js
 
     def local_minimize_grad(self, use_fft=True):
