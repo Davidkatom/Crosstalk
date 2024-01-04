@@ -241,9 +241,12 @@ class RamseyBatch:
 
     def add_noise(self, decay_time):
         #decay_time_i = [random.gauss(decay_time, 0.4) for _ in range(self.n)]
-        for i in range(len(self.Zi)):
-            self.Zi[i] = [self.Zi[i][j]*np.exp(-self.delay[j]/decay_time) for j in range(len(self.Zi[i]))]
-
+        #for i in range(len(self.Zi)):
+        #    self.Zi[i] = [self.Zi[i][j]*np.exp(-self.delay[j]/decay_time) for j in range(len(self.Zi[i]))]
+        for n in range(len(self.Zi)):
+            decayed_column = [row[n] * np.exp(-self.delay[i]) for i, row in enumerate(self.Zi)]
+            for i, row in enumerate(self.Zi):
+                row[n] = decayed_column[i]
 
 
     def fft(self):
