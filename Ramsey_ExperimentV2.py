@@ -53,10 +53,12 @@ h = lambda n, J, z: sum([J[i] * 0.25 * (z[i] - 1) * (z[(i + 1)] - 1) for i in ra
 # backend = AerSimulator(noise_model=noise_model,
 #                        basis_gates=basis_gates)
 service = QiskitRuntimeService()
-backend = service.backend("ibm_osaka")
-noise_model = NoiseModel.from_backend(backend)
-sim_noise = AerSimulator(noise_model=noise_model)
-passmanager = generate_preset_pass_manager(optimization_level=0, backend=sim_noise)
+
+
+# backend = service.backend("ibm_osaka")
+# noise_model = NoiseModel.from_backend(backend)
+# sim_noise = AerSimulator(noise_model=noise_model)
+# passmanager = generate_preset_pass_manager(optimization_level=0, backend=sim_noise)
 def effective_hem(size, J, W):
     hem = np.zeros((2 ** size, 2 ** size))
     for i in range(2 ** size):
@@ -85,14 +87,27 @@ class RamseyExperiment:
         self.zi = []
         self.result = None
         self.z = None
-
+        self.noise_model = {}
 
         # self.create_circuit_crosstalk()
         # self.create_circuit_detuning()
 
-    def add_noise(self):
+    def add_decay(self):
         for i in range(self.n):
             self.zi[i] = self.zi[i] * np.exp(-self.L[i] * self.delay)
+
+    def add_noise(self):
+        bins = 2 ** self.n
+        num_samples = self.shots//5
+        samples = np.random.randint(low=0, high=bins, size=num_samples)
+        bin_counts = [np.sum(samples == i) for i in range(bins)]
+        noise_model = {}
+        for i in range(len(bin_counts)):
+            binary = '{0:b}'.format(i).zfill(self.n)
+            noise_model[binary] = bin_counts[i]
+        self.noise_model = noise_model
+        self.z = self._get_z_exp()
+
 
     def create_circuit_crosstalk(self):
         q = QuantumRegister(self.n)
@@ -180,24 +195,27 @@ class RamseyExperiment:
         # backend = service.backend("ibm_osaka")
         # noise_model = NoiseModel.from_backend(backend)
 
-        circ_tnoise = passmanager.run(self.circuit)
-        job = sim_noise.run(circ_tnoise)
+        # circ_tnoise = passmanager.run(self.circuit)
+        # job = sim_noise.run(circ_tnoise)
 
-        #job = execute(self.circuit, backend, shots=self.shots, noise_model=noise_model)
+        job = execute(self.circuit, Aer.get_backend("qasm_simulator"), shots=self.shots)
         return job.result()
 
     def _get_z_exp(self):
         Z = []
         Zi = []
+        counts_exp = self.result.get_counts()
+        counts = {key: counts_exp.get(key, 0) + self.noise_model.get(key, 0) for key in set(counts_exp) | set(self.noise_model)}
+        normalization = sum(counts.values())
         for i in range(self.n):
             sumZ = 0
-            for outcome, count in self.result.get_counts().items():
+            for outcome, count in counts.items():
                 outcome = outcome[::-1]
                 plus = count if outcome[i] == '0' else 0
                 minus = count if outcome[i] == '1' else 0
                 sumZ += plus - minus
-                Z.append((plus - minus) / self.shots)
-            Zi.append(sumZ / self.shots)
+                Z.append((plus - minus) / normalization)
+            Zi.append(sumZ / normalization)
         self.zi = Zi
         return sum(Z)
 
