@@ -88,9 +88,29 @@ class RamseyExperiment:
         self.result = None
         self.z = None
         self.noise_model = {}
-
+        self.raw_data = []
         # self.create_circuit_crosstalk()
         # self.create_circuit_detuning()
+
+    def create_full_circuit(self):
+        q = QuantumRegister(self.n)
+        c = ClassicalRegister(self.n)
+        U = expm((-1j * self.delay) * effective_hem(self.n, self.J, self.W))
+        U = qi.Operator(U)
+        circuit = QuantumCircuit(q, c)
+
+        for i in range(self.n):
+            circuit.h(i)
+        circuit.barrier()
+        circuit.unitary(U, [i for i in range(self.n)])
+        circuit.barrier()
+        for i in range(self.n):
+            circuit.h(i)
+            circuit.measure(i, c[i])
+        self.circuit = circuit
+
+        self.result = self._run()
+        self.z = self._get_z_exp()
 
     def add_decay(self):
         for i in range(self.n):
@@ -98,7 +118,7 @@ class RamseyExperiment:
 
     def add_noise(self):
         bins = 2 ** self.n
-        num_samples = self.shots//5
+        num_samples = self.shots // 5
         samples = np.random.randint(low=0, high=bins, size=num_samples)
         bin_counts = [np.sum(samples == i) for i in range(bins)]
         noise_model = {}
@@ -107,7 +127,6 @@ class RamseyExperiment:
             noise_model[binary] = bin_counts[i]
         self.noise_model = noise_model
         self.z = self._get_z_exp()
-
 
     def create_circuit_crosstalk(self):
         q = QuantumRegister(self.n)
@@ -198,14 +217,16 @@ class RamseyExperiment:
         # circ_tnoise = passmanager.run(self.circuit)
         # job = sim_noise.run(circ_tnoise)
 
-        job = execute(self.circuit, Aer.get_backend("qasm_simulator"), shots=self.shots)
+        job = execute(self.circuit, Aer.get_backend("qasm_simulator"), shots=self.shots, memory=True)
+        self.raw_data = job.result().get_memory()
         return job.result()
 
     def _get_z_exp(self):
         Z = []
         Zi = []
         counts_exp = self.result.get_counts()
-        counts = {key: counts_exp.get(key, 0) + self.noise_model.get(key, 0) for key in set(counts_exp) | set(self.noise_model)}
+        counts = {key: counts_exp.get(key, 0) + self.noise_model.get(key, 0) for key in
+                  set(counts_exp) | set(self.noise_model)}
         normalization = sum(counts.values())
         for i in range(self.n):
             sumZ = 0
@@ -219,7 +240,35 @@ class RamseyExperiment:
         self.zi = Zi
         return sum(Z)
 
+    def add_decay_raw(self):
+        new_data = []
+        decay = self.L
+        decay.reverse()
+        for i in range(self.n):
+            for bitstring in self.raw_data:
+                new_bitstring = ""
+                for bit in bitstring:
+                    if bit == '0':
+                        new_bitstring += '0'
+                    else:
+                        new_bitstring += '1' if random.uniform(0, 1) < np.exp(-decay[i] * self.delay) else '0'
+                new_data.append(new_bitstring)
 
+    def add_noise_raw(self):
+        self.add_noise()
+        new_data = []
+        for key in self.noise_model:
+            bitstring = key
+            for i in range(self.noise_model[key]):
+                new_data.append(bitstring)
+        random.shuffle(new_data)
+        self.raw_data = self.raw_data + new_data
+
+    def to_int(self):
+        new_data = []
+        for bitstring in self.raw_data:
+            new_data.append(int(bitstring, 2))
+        self.raw_data = new_data
 class RamseyBatch:
 
     def __init__(self, RamseyExperiments: "list of RamseyExperiment"):
