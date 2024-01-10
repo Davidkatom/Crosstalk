@@ -281,6 +281,8 @@ class RamseyBatch:
         self.Z = []
         self.Zi = []
         self.n = None
+        self.fft_data = []
+        self.frequencies = None
 
         self.RamseyExperiments = RamseyExperiments
         for RamseyExperiment in RamseyExperiments:
@@ -294,3 +296,21 @@ class RamseyBatch:
 
     def get_zi(self, n):
         return [sublist[n] for sublist in self.Zi]
+
+    def fft(self):
+        if self.frequencies is None:
+            for i in range(self.n):
+                extended = self.get_zi(i)[::-1]
+                extended = extended + self.get_zi(i)
+                fft_output = np.fft.fft(extended)
+                sample_rate = len(self.delay) / self.delay[-1]
+                frequencies = np.fft.fftfreq(len(extended), 1 / sample_rate)
+                frequencies *= (2 * np.pi)
+
+                paired = sorted(zip(frequencies, fft_output))
+                frequencies, fft_output = zip(*paired)
+                if self.frequencies is None:
+                    self.frequencies = np.array(frequencies)
+                self.fft_data.append(np.abs(fft_output))
+        return self.frequencies, self.fft_data
+
