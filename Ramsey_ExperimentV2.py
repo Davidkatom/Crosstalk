@@ -1,5 +1,6 @@
 import os
 import random
+from scipy import signal
 from itertools import permutations
 import pickle
 
@@ -217,16 +218,27 @@ class RamseyExperiment:
         # circ_tnoise = passmanager.run(self.circuit)
         # job = sim_noise.run(circ_tnoise)
 
-        job = execute(self.circuit, Aer.get_backend("qasm_simulator"), shots=self.shots, memory=True)
-        self.raw_data = job.result().get_memory()
+        job = execute(self.circuit, Aer.get_backend("qasm_simulator"), shots=self.shots)
+        #self.raw_data = job.result().get_memory()
+        self.raw_data = self.get_raw_from_counts(job.result().get_counts())
         return job.result()
 
+    def get_raw_from_counts(self, counts):
+        raw = []
+        for key in counts:
+            for i in range(counts[key]):
+                raw.append(key)
+        return raw
+    def get_counts_from_raw(self):
+        counts = {}
+        for bitstring in self.raw_data:
+            counts[bitstring] = counts.get(bitstring, 0) + 1
+        return counts
     def _get_z_exp(self):
         Z = []
         Zi = []
-        counts_exp = self.result.get_counts()
-        counts = {key: counts_exp.get(key, 0) + self.noise_model.get(key, 0) for key in
-                  set(counts_exp) | set(self.noise_model)}
+
+        counts = self.get_counts_from_raw()
         normalization = sum(counts.values())
         for i in range(self.n):
             sumZ = 0
@@ -244,15 +256,20 @@ class RamseyExperiment:
         new_data = []
         decay = self.L
         decay.reverse()
-        for i in range(self.n):
-            for bitstring in self.raw_data:
-                new_bitstring = ""
-                for bit in bitstring:
-                    if bit == '0':
-                        new_bitstring += '0'
-                    else:
-                        new_bitstring += '1' if random.uniform(0, 1) < np.exp(-decay[i] * self.delay) else '0'
-                new_data.append(new_bitstring)
+        #print(np.exp(-decay[2] * self.delay))
+        if(self.delay > 9.42):
+            a = 1
+        for bitstring in self.raw_data:
+            new_bitstring = ""
+            for i, bit in enumerate(bitstring):
+                if bit == '0':
+                    new_bitstring += '0'
+                else:
+                    p = np.exp(-decay[i] * self.delay)
+                    new_bitstring += '1' if random.uniform(0, 1) < p else '0'
+            new_data.append(new_bitstring)
+        self.raw_data = new_data
+        self._get_z_exp()
 
     def add_noise_raw(self):
         self.add_noise()
@@ -263,12 +280,15 @@ class RamseyExperiment:
                 new_data.append(bitstring)
         random.shuffle(new_data)
         self.raw_data = self.raw_data + new_data
+        self._get_z_exp()
 
     def to_int(self):
         new_data = []
         for bitstring in self.raw_data:
             new_data.append(int(bitstring, 2))
         self.raw_data = new_data
+
+
 class RamseyBatch:
 
     def __init__(self, RamseyExperiments: "list of RamseyExperiment"):
@@ -283,6 +303,7 @@ class RamseyBatch:
         self.n = None
         self.fft_data = []
         self.frequencies = None
+        self.zi_formated = []
 
         self.RamseyExperiments = RamseyExperiments
         for RamseyExperiment in RamseyExperiments:
@@ -293,24 +314,78 @@ class RamseyBatch:
             self.delay.append(RamseyExperiment.delay)
             self.Z.append(RamseyExperiment.z)
             self.Zi.append(RamseyExperiment.zi)
+        for i in range(self.n):
+            self.zi_formated.append([sublist[i] for sublist in self.Zi])
 
     def get_zi(self, n):
-        return [sublist[n] for sublist in self.Zi]
+        return self.zi_formated[n]
 
-    def fft(self):
-        if self.frequencies is None:
-            for i in range(self.n):
-                extended = self.get_zi(i)[::-1]
-                extended = extended + self.get_zi(i)
-                fft_output = np.fft.fft(extended)
-                sample_rate = len(self.delay) / self.delay[-1]
-                frequencies = np.fft.fftfreq(len(extended), 1 / sample_rate)
-                frequencies *= (2 * np.pi)
+    def apply_lowpass_filter(self, data, cutoff=3):
+        def design_lowpass_filter(cutoff, fs, numtaps):
+            nyquist = 0.5 * fs
+            normalized_cutoff = cutoff / nyquist
+            return signal.firwin(numtaps, normalized_cutoff)
 
-                paired = sorted(zip(frequencies, fft_output))
-                frequencies, fft_output = zip(*paired)
-                if self.frequencies is None:
-                    self.frequencies = np.array(frequencies)
-                self.fft_data.append(np.abs(fft_output))
+        filter_coefficients = design_lowpass_filter(cutoff, len(self.delay) / self.delay[-1], len(self.delay)*2)
+        return np.convolve(data, filter_coefficients, mode='same')
+
+    def fft(self, data=None, filter=None):
+        def single_fft(data):
+            if isinstance(data, np.ndarray):
+                extended = np.concatenate([data[::-1], data])
+            else:
+                extended = data[::-1] + data
+            if filter is not None:
+                extended = self.apply_lowpass_filter(extended)
+            fft_output = np.fft.fft(extended)
+            sample_rate = len(self.delay) / self.delay[-1]
+            frequencies = np.fft.fftfreq(len(extended), 1 / sample_rate)
+            frequencies *= (2 * np.pi)
+
+            paired = sorted(zip(frequencies, fft_output))
+            frequencies, fft_output = zip(*paired)
+            if self.frequencies is None:
+                self.frequencies = np.array(frequencies)
+            return np.abs(fft_output)
+
+        if data is not None:
+            return single_fft(data)
+
+        for i in range(self.n):
+            self.fft_data.append(single_fft(self.get_zi(i)))
         return self.frequencies, self.fft_data
 
+    # def apply_filter(self, filter,params):
+    #     zi = []
+    #     for i in range(self.n):
+    #         zi.append(filter(self.get_zi(i)))
+    #     self.zi_formated = zi
+
+    def set_zi(self, zi):
+        self.zi_formated = zi
+
+    def cauchy_log_likelihood(self, qubit_n):
+        def calc_log_likelihood(data):
+            def neg_log_likelihood(params):
+                gamma, w = np.abs(params[0]), params[1]  # Ensure gamma is positive
+                log_likelihood = np.sum(0.001 * np.log(
+                    np.pi * (2 * gamma / (gamma ** 2 + (data - w) ** 2) + 2 * gamma / (gamma ** 2 + (data + w) ** 2))))
+                return -log_likelihood  # Negative because we minimize
+
+            # Initial guess for gamma using median absolute deviation
+            initial_params = np.array([5, 5])
+
+            # Optimize using a different method (e.g., 'Nelder-Mead')
+            result = minimize(neg_log_likelihood, initial_params, method='Powell')
+            if result.success:
+                return result.x  # The optimal gamma value
+            else:
+                return [np.nan, np.nan]
+
+        params = []
+        # fft_data = gaussian_filter(np.abs(fft_output_ext2), sigma=0)
+        probs = self.fft_data[qubit_n] / np.sum(self.fft_data[qubit_n])
+        samples = np.random.choice(self.frequencies, size=100000, p=probs)
+        gamma, w0 = calc_log_likelihood(samples)
+        params.append({'gamma': gamma, 'w0': w0})
+        return {'gamma': gamma, 'w0': w0}
