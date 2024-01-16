@@ -77,7 +77,7 @@ class RamseyExperiment:
         self.delay = delay
         self.n = n
         self.J = J
-        self.L = L
+        self.L = L[::-1]
         # W.reverse()
         self.W = W[::-1]
         self.J = J[::-1]
@@ -115,7 +115,7 @@ class RamseyExperiment:
 
     def add_decay(self):
         for i in range(self.n):
-            self.zi[i] = self.zi[i] * np.exp(-self.L[i] * self.delay)
+            self.zi[i] = self.zi[i] * np.exp(-self.L[self.n - i - 1] * self.delay)
 
     def add_noise(self):
         bins = 2 ** self.n
@@ -219,7 +219,7 @@ class RamseyExperiment:
         # job = sim_noise.run(circ_tnoise)
 
         job = execute(self.circuit, Aer.get_backend("qasm_simulator"), shots=self.shots)
-        #self.raw_data = job.result().get_memory()
+        # self.raw_data = job.result().get_memory()
         self.raw_data = self.get_raw_from_counts(job.result().get_counts())
         return job.result()
 
@@ -229,11 +229,13 @@ class RamseyExperiment:
             for i in range(counts[key]):
                 raw.append(key)
         return raw
+
     def get_counts_from_raw(self):
         counts = {}
         for bitstring in self.raw_data:
             counts[bitstring] = counts.get(bitstring, 0) + 1
         return counts
+
     def _get_z_exp(self):
         Z = []
         Zi = []
@@ -250,23 +252,72 @@ class RamseyExperiment:
                 Z.append((plus - minus) / normalization)
             Zi.append(sumZ / normalization)
         self.zi = Zi
+        # print(self.zi)
         return sum(Z)
+
+    def get_all_z_exp(self, counts=None):
+        # This function generates all possible Pauli strings of length `num_qubits` using 'Z' and 'I'
+        pauli_strings = []
+
+        # Loop over the range 0 to 2^num_qubits - 1
+        for i in range(1, 2 ** self.n):
+            # Convert number to binary, remove '0b' prefix, and zfill to make it num_qubits long
+            binary_str = bin(i)[2:].zfill(self.n)
+
+            # Replace '0' with 'I' and '1' with 'Z'
+            pauli_str = binary_str.replace('0', 'I').replace('1', 'Z')
+
+            pauli_strings.append(pauli_str)
+
+        values = []
+        for pauli_string in pauli_strings:
+            values.append(self.get_zn_exp(pauli_string, counts=counts))
+        return values
+
+    def get_zn_exp(self, pauli_string, counts=None):
+        """
+        Calculate the expectation value of an observable represented by a Pauli string,
+        correctly handling the product of observables.
+
+        :param counts: dictionary of counts
+        :param pauli_string: A string representing the observable, composed of 'Z' and 'I'.
+        :return: The expectation value of the observable.
+        """
+        if counts is None:
+            counts = self.get_counts_from_raw()
+        normalization = sum(counts.values())
+        expectation_value = 0
+
+        for outcome, count in counts.items():
+            #outcome = outcome[::-1]  # Reversing to match qubit order
+            term_value = 1
+
+            for i, pauli_char in enumerate(pauli_string):
+                if pauli_char == 'Z':
+                    # Apply Z operation
+                    term_value *= 1 if outcome[i] == '0' else -1
+                elif pauli_char != 'I':
+                    # Invalid character in Pauli string
+                    raise ValueError(f"Invalid character '{pauli_char}' in Pauli string. Only 'Z' and 'I' are allowed.")
+
+            expectation_value += term_value * count
+
+        return expectation_value / normalization
 
     def add_decay_raw(self):
         new_data = []
         decay = self.L
-        decay.reverse()
-        #print(np.exp(-decay[2] * self.delay))
-        if(self.delay > 9.42):
-            a = 1
+        # decay.reverse()
+        # print(np.exp(-decay[2] * self.delay))
+
         for bitstring in self.raw_data:
             new_bitstring = ""
             for i, bit in enumerate(bitstring):
+                p = 0.5 * (1 - np.exp(-decay[i] * self.delay))
                 if bit == '0':
-                    new_bitstring += '0'
+                    new_bitstring += '0' if np.random.random() > p else '1'
                 else:
-                    p = np.exp(-decay[i] * self.delay)
-                    new_bitstring += '1' if random.uniform(0, 1) < p else '0'
+                    new_bitstring += '1' if np.random.random() > p else '0'
             new_data.append(new_bitstring)
         self.raw_data = new_data
         self._get_z_exp()
@@ -295,7 +346,9 @@ class RamseyBatch:
         self.dist = None
         self.J = None
         self.W = None
+        self.L = None
         self.J_fit = []
+        self.decay_fit = []
         self.W_fit = []
         self.delay = []
         self.Z = []
@@ -309,6 +362,7 @@ class RamseyBatch:
         for RamseyExperiment in RamseyExperiments:
             if self.J is None:
                 self.W = RamseyExperiment.W
+                self.L = RamseyExperiment.L
                 self.J = RamseyExperiment.J
                 self.n = RamseyExperiment.n
             self.delay.append(RamseyExperiment.delay)
@@ -326,7 +380,7 @@ class RamseyBatch:
             normalized_cutoff = cutoff / nyquist
             return signal.firwin(numtaps, normalized_cutoff)
 
-        filter_coefficients = design_lowpass_filter(cutoff, len(self.delay) / self.delay[-1], len(self.delay)*2)
+        filter_coefficients = design_lowpass_filter(cutoff, len(self.delay) / self.delay[-1], len(self.delay) * 2)
         return np.convolve(data, filter_coefficients, mode='same')
 
     def fft(self, data=None, filter=None):
@@ -364,6 +418,30 @@ class RamseyBatch:
     def set_zi(self, zi):
         self.zi_formated = zi
 
+    def fit_to_theory(self, data=None):
+        def model_func(x, a, w):
+            return (np.cos(w * x)) * np.exp(-a * x)
+
+        if data is None:
+            data = []
+            for i in range(self.n):
+                data.append(self.get_zi(i))
+
+        parameters = []
+        for i in range(len(data)):
+            initial_guess = [1, 1]
+            # Perform the curve fitting
+            x_points = self.delay
+            y_points = data[i]
+            try:
+                params, params_covariance, *c = curve_fit(model_func, x_points, y_points, p0=initial_guess)
+            except:
+                params = [100, 100]
+            # self.decay_fit.append(params[0])
+            # self.W_fit.append(params[1])
+            parameters.append(np.abs(params))
+        return parameters
+
     def cauchy_log_likelihood(self, qubit_n):
         def calc_log_likelihood(data):
             def neg_log_likelihood(params):
@@ -389,3 +467,9 @@ class RamseyBatch:
         gamma, w0 = calc_log_likelihood(samples)
         params.append({'gamma': gamma, 'w0': w0})
         return {'gamma': gamma, 'w0': w0}
+
+    def calc_dist(self, array1, array2):
+        array1 = np.array(array1)
+        array2 = np.array(array2)
+        dist = 1 / np.sqrt(len(array1)) * np.linalg.norm(array1 - array2)
+        return 100 * dist/np.mean(array2)

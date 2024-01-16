@@ -5,7 +5,7 @@ from tqdm import tqdm
 import numpy as np
 import Ramsey_ExperimentV2
 
-total_experiments = 10000
+total_experiments = 1
 total_time = 0.5 * np.pi
 measurement_amount = 10
 number_of_qubits = 2
@@ -59,6 +59,7 @@ for i in tqdm(range(total_experiments), desc='total experiments'):
     L = [random.gauss(1, 1) for _ in range(number_of_qubits)]
     W = [random.gauss(3, 1) for _ in range(number_of_qubits)]
     J = [random.gauss(3, 1) for _ in range(number_of_qubits - 1)]
+    #J = [0]
     W_parameters.append(W)
     J_parameters.append(J)
     decay_parameters.append(L)
@@ -69,7 +70,9 @@ for i in tqdm(range(total_experiments), desc='total experiments'):
         # exp.add_noise_raw()
         #exp.to_int()
         #experiment_parts.append(exp.raw_data)
-        experiment_parts.append(exp.zi)
+        values = exp.get_all_z_exp()
+        print("<a*b> = ", values[2], "<a>*<b> = ", values[0] * values[1])
+        experiment_parts.append(exp.get_all_z_exp())
 
     experiments.append(experiment_parts)
 create_csv_from_experiments(experiments, decay_parameters, W_parameters, J_parameters, filename='experiments.csv')
