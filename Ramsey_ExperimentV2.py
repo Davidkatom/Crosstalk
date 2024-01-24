@@ -90,6 +90,7 @@ class RamseyExperiment:
         self.z = None
         self.noise_model = {}
         self.raw_data = []
+        self.qubits_measured = []
         # self.create_circuit_crosstalk()
         # self.create_circuit_detuning()
 
@@ -147,8 +148,9 @@ class RamseyExperiment:
         for i in range(0, self.n, 2):
             circuit.h(i)
 
-        for i in range(0, self.n - 1, 2):
+        for i in range(0, self.n, 2):
             circuit.measure(i, c[4 * int(i / 4) + int((i / 2) % 2)])
+            self.qubits_measured.append(i)
 
         circuit.barrier()
         for i in range(self.n):
@@ -167,6 +169,7 @@ class RamseyExperiment:
             circuit.h(i)
         for i in range(2, self.n, 2):
             circuit.measure(i, c[2 * int(i / 4) + int((i / 2) % 2) + 1])
+            self.qubits_measured.append(i)
         self.circuit = circuit
 
         self.result = self._run()
@@ -203,7 +206,6 @@ class RamseyExperiment:
             circuit.h(i)
             circuit.measure(i, c[i])
         circuit.barrier()
-        circuit.draw(output='mpl')  # 'mpl' for matplotlib drawing
 
         self.circuit = circuit
 
@@ -289,7 +291,7 @@ class RamseyExperiment:
         expectation_value = 0
 
         for outcome, count in counts.items():
-            #outcome = outcome[::-1]  # Reversing to match qubit order
+            # outcome = outcome[::-1]  # Reversing to match qubit order
             term_value = 1
 
             for i, pauli_char in enumerate(pauli_string):
@@ -357,6 +359,7 @@ class RamseyBatch:
         self.fft_data = []
         self.frequencies = None
         self.zi_formated = []
+        self.qubits_measured = None
 
         self.RamseyExperiments = RamseyExperiments
         for RamseyExperiment in RamseyExperiments:
@@ -365,6 +368,7 @@ class RamseyBatch:
                 self.L = RamseyExperiment.L
                 self.J = RamseyExperiment.J
                 self.n = RamseyExperiment.n
+                self.qubits_measured = RamseyExperiment.qubits_measured
             self.delay.append(RamseyExperiment.delay)
             self.Z.append(RamseyExperiment.z)
             self.Zi.append(RamseyExperiment.zi)
@@ -442,34 +446,44 @@ class RamseyBatch:
             parameters.append(np.abs(params))
         return parameters
 
-    def cauchy_log_likelihood(self, qubit_n):
-        def calc_log_likelihood(data):
-            def neg_log_likelihood(params):
-                gamma, w = np.abs(params[0]), params[1]  # Ensure gamma is positive
-                log_likelihood = np.sum(0.001 * np.log(
-                    np.pi * (2 * gamma / (gamma ** 2 + (data - w) ** 2) + 2 * gamma / (gamma ** 2 + (data + w) ** 2))))
-                return -log_likelihood  # Negative because we minimize
-
-            # Initial guess for gamma using median absolute deviation
-            initial_params = np.array([5, 5])
-
-            # Optimize using a different method (e.g., 'Nelder-Mead')
-            result = minimize(neg_log_likelihood, initial_params, method='Powell')
-            if result.success:
-                return result.x  # The optimal gamma value
-            else:
-                return [np.nan, np.nan]
-
+    def log_likelihood_estimator(self):
         params = []
-        # fft_data = gaussian_filter(np.abs(fft_output_ext2), sigma=0)
-        probs = self.fft_data[qubit_n] / np.sum(self.fft_data[qubit_n])
-        samples = np.random.choice(self.frequencies, size=100000, p=probs)
-        gamma, w0 = calc_log_likelihood(samples)
-        params.append({'gamma': gamma, 'w0': w0})
-        return {'gamma': gamma, 'w0': w0}
+
+        def f(t, w, a, x):
+            if x == 1:
+                val = 0.5 * (1 + np.cos(w * t) * np.exp(-a * t))
+            if x == -1:
+                val = 0.5 * (1 - np.cos(w * t) * np.exp(-a * t))
+
+            if val == 0:
+                return 1e-10
+            return val
+
+        for i in range(self.n):
+            def log_likelihood(params):
+                w, a = params[0], params[1]
+                likelihood = 0
+                for j in range(len(self.delay)):
+                    shots = self.RamseyExperiments[j].shots
+                    ups = shots * (self.get_zi(i)[j] + 1) / 2
+                    downs = shots - ups
+                    likelihood += ups * np.log(f(self.delay[j], w, a, 1))
+                    likelihood += downs * np.log(f(self.delay[j], w, a, -1))
+                return -likelihood
+
+            initial_params = np.array([5, 5])
+            result = minimize(log_likelihood, initial_params)
+            if result.success:
+                w0 = result.x[0]
+                gamma = result.x[1]
+                params.append({'gamma': gamma, 'w0': w0})
+
+            else:
+                params.append({'gamma': np.nan, 'w0': np.nan})
+        return params
 
     def calc_dist(self, array1, array2):
         array1 = np.array(array1)
         array2 = np.array(array2)
         dist = 1 / np.sqrt(len(array1)) * np.linalg.norm(array1 - array2)
-        return 100 * dist/np.mean(array2)
+        return 100 * dist / np.mean(array2)
