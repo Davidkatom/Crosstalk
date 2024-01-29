@@ -5,12 +5,13 @@ from tqdm import tqdm
 import numpy as np
 import Ramsey_ExperimentV2
 
-total_experiments = 1
+total_experiments = 100
 total_time = 0.5 * np.pi
-measurement_amount = 10
+measurement_amount = 2
 number_of_qubits = 2
-shots = 100
-time_stamps = np.linspace(0, total_time, measurement_amount)
+shots = 500
+time_stamps = [0.0922, 0.35693]
+# time_stamps = np.linspace(0, total_time, measurement_amount)
 
 experiments = []
 
@@ -56,23 +57,20 @@ J_parameters = []
 decay_parameters = []
 for i in tqdm(range(total_experiments), desc='total experiments'):
     experiment_parts = []
-    L = [random.gauss(1, 1) for _ in range(number_of_qubits)]
-    W = [random.gauss(3, 1) for _ in range(number_of_qubits)]
-    J = [random.gauss(3, 1) for _ in range(number_of_qubits - 1)]
-    #J = [0]
+    L = [random.gauss(5, 2) for _ in range(number_of_qubits)]
+    W = [random.gauss(5, 2) for _ in range(number_of_qubits)]
+    J = [random.gauss(0, 0) for _ in range(number_of_qubits - 1)]
+    # J = [0]
     W_parameters.append(W)
     J_parameters.append(J)
     decay_parameters.append(L)
     for t in time_stamps:
         exp = Ramsey_ExperimentV2.RamseyExperiment(number_of_qubits, t, shots, J, W, L)
         exp.create_full_circuit()
-        # exp.add_decay_raw()
+        exp.add_decay_raw()
         # exp.add_noise_raw()
-        #exp.to_int()
-        #experiment_parts.append(exp.raw_data)
-        values = exp.get_all_z_exp()
-        print("<a*b> = ", values[2], "<a>*<b> = ", values[0] * values[1])
-        experiment_parts.append(exp.get_all_z_exp())
+        values = exp.get_z_nearest_neighbors()
+        experiment_parts.append(values)
 
     experiments.append(experiment_parts)
 create_csv_from_experiments(experiments, decay_parameters, W_parameters, J_parameters, filename='experiments.csv')

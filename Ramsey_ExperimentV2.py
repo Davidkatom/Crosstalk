@@ -1,28 +1,12 @@
-import os
 import random
 from scipy import signal
-from itertools import permutations
-import pickle
-
-import matplotlib.pyplot as plt
 import numpy as np
-import time
-
-from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
-from qiskit_aer import AerSimulator, noise
-from qiskit_aer.noise import NoiseModel
 from qiskit_ibm_runtime import QiskitRuntimeService
-from scipy.ndimage import gaussian_filter
-
-import qiskit
-from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, execute, Aer
-import qiskit as qiskit
+from qiskit import QuantumRegister, ClassicalRegister, execute
 import qiskit.quantum_info as qi
-from qiskit import QuantumCircuit, transpile, Aer, IBMQ
+from qiskit import QuantumCircuit, Aer
 from scipy.linalg import expm
-from scipy.optimize import curve_fit, minimize, differential_evolution
-from scipy.signal import find_peaks
-from tqdm import tqdm
+from scipy.optimize import curve_fit, minimize
 
 # Loading your IBM Quantum account(s)
 service = QiskitRuntimeService(
@@ -53,8 +37,6 @@ h = lambda n, J, z: sum([J[i] * 0.25 * (z[i] - 1) * (z[(i + 1)] - 1) for i in ra
 # basis_gates = noise_model.basis_gates
 # backend = AerSimulator(noise_model=noise_model,
 #                        basis_gates=basis_gates)
-service = QiskitRuntimeService()
-
 
 # backend = service.backend("ibm_osaka")
 # noise_model = NoiseModel.from_backend(backend)
@@ -269,6 +251,25 @@ class RamseyExperiment:
             # Replace '0' with 'I' and '1' with 'Z'
             pauli_str = binary_str.replace('0', 'I').replace('1', 'Z')
 
+            pauli_strings.append(pauli_str)
+
+        values = []
+        for pauli_string in pauli_strings:
+            values.append(self.get_zn_exp(pauli_string, counts=counts))
+        return values
+
+    def get_z_nearest_neighbors(self, counts=None):
+        # This function generates Pauli strings for single qubits and pairs of nearest neighbors
+        pauli_strings = []
+
+        # Single qubit measurements
+        for i in range(self.n):
+            pauli_str = 'I' * i + 'Z' + 'I' * (self.n - i - 1)
+            pauli_strings.append(pauli_str)
+
+        # Nearest neighbor pairs
+        for i in range(self.n - 1):
+            pauli_str = 'I' * i + 'ZZ' + 'I' * (self.n - i - 2)
             pauli_strings.append(pauli_str)
 
         values = []
