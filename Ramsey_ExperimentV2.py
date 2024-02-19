@@ -17,6 +17,7 @@ service = QiskitRuntimeService(
 
 h = lambda n, J, z: sum([J[i] * 0.25 * (z[i] - 1) * (z[(i + 1)] - 1) for i in range(n - 1)])
 
+
 # prob_1 = 0.001  # 1-qubit gate
 # prob_2 = 0.01  # 2-qubit gate
 #
@@ -55,7 +56,7 @@ def effective_hem(size, J, W):
 
 class RamseyExperiment:
     def __init__(self, n, delay, shots, J, W, L,
-                 backend=Aer.get_backend("qasm_simulator"), manual=False):
+                 backend=Aer.get_backend("qasm_simulator"), basis="X"):
         self.delay = delay
         self.n = n
         self.J = J
@@ -73,8 +74,7 @@ class RamseyExperiment:
         self.noise_model = {}
         self.raw_data = []
         self.qubits_measured = []
-        # self.create_circuit_crosstalk()
-        # self.create_circuit_detuning()
+        self.basis = basis
 
     def create_full_circuit(self):
         q = QuantumRegister(self.n)
@@ -89,6 +89,8 @@ class RamseyExperiment:
         circuit.unitary(U, [i for i in range(self.n)])
         circuit.barrier()
         for i in range(self.n):
+            if self.basis == "Y":
+                circuit.sdg(i)
             circuit.h(i)
             circuit.measure(i, c[i])
         self.circuit = circuit
@@ -128,6 +130,8 @@ class RamseyExperiment:
         circuit.unitary(U, [i for i in range(self.n)])
         circuit.barrier()
         for i in range(0, self.n, 2):
+            if self.basis == "Y":
+                circuit.sdg(i)
             circuit.h(i)
 
         for i in range(0, self.n, 2):
@@ -148,6 +152,8 @@ class RamseyExperiment:
         circuit.unitary(U, [i for i in range(self.n)])
         circuit.barrier()
         for i in range(0, self.n, 2):
+            if self.basis == "Y":
+                circuit.sdg(i)
             circuit.h(i)
         for i in range(2, self.n, 2):
             circuit.measure(i, c[2 * int(i / 4) + int((i / 2) % 2) + 1])
@@ -171,6 +177,8 @@ class RamseyExperiment:
 
         circuit.barrier()
         for i in range(0, self.n, 2):
+            if self.basis == "Y":
+                circuit.sdg(i)
             circuit.h(i)
             circuit.measure(i, c[i])
             circuit.reset(i)
@@ -185,6 +193,8 @@ class RamseyExperiment:
 
         circuit.barrier()
         for i in range(1, self.n, 2):
+            if self.basis == "Y":
+                circuit.sdg(i)
             circuit.h(i)
             circuit.measure(i, c[i])
         circuit.barrier()
@@ -483,8 +493,38 @@ class RamseyBatch:
                 params.append({'gamma': np.nan, 'w0': np.nan})
         return params
 
-    def calc_dist(self, array1, array2):
-        array1 = np.array(array1)
-        array2 = np.array(array2)
-        dist = 1 / np.sqrt(len(array1)) * np.linalg.norm(array1 - array2)
-        return 100 * dist / np.mean(array2)
+    def calc_dist(self, fitted_values, correct_values):
+        fitted_values = np.array(fitted_values)
+        correct_values = np.array(correct_values)
+        mse = (fitted_values - correct_values) ** 2 / len(fitted_values)
+        precent_error = (np.sqrt(np.abs(mse)) / np.abs(correct_values)) * 100
+        return precent_error
+
+
+def complex_fit(batch_x, batch_y):
+    def model_func(t, a, w):
+        x_model = (np.cos(w * t)) * np.exp(-a * t)
+        y_model = -(np.sin(w * t)) * np.exp(-a * t)
+        return np.concatenate([x_model, y_model])
+
+    data_x = []
+    data_y = []
+
+    for i in range(batch_x.n):
+        data_x.append(batch_x.get_zi(i))
+        data_y.append(batch_y.get_zi(i))
+
+    parameters = []
+    for i in range(len(data_x)):
+        initial_guess = [1, 1]
+        # Perform the curve fitting
+        t_points = batch_x.delay
+        z_points = np.concatenate([np.array(data_x[i]), np.array(data_y[i])])
+        try:
+            params, params_covariance, *c = curve_fit(model_func, t_points, z_points, p0=initial_guess)
+        except:
+            params = [100, 100]
+        # self.decay_fit.append(params[0])
+        # self.W_fit.append(params[1])
+        parameters.append(np.abs(params))
+    return parameters
