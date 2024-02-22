@@ -287,6 +287,26 @@ class RamseyExperiment:
             values.append(self.get_zn_exp(pauli_string, counts=counts))
         return values
 
+    def get_n_nearest_neighbors(self, n_neighbors, counts=None):
+        # This function generates Pauli strings for single qubits and n nearest neighbors
+        pauli_strings = []
+
+        # Single qubit measurements
+        for i in range(self.n):
+            pauli_str = 'I' * i + 'Z' + 'I' * (self.n - i - 1)
+            pauli_strings.append(pauli_str)
+
+        # n nearest neighbor pairs
+        for distance in range(1, n_neighbors + 1):
+            for i in range(self.n - distance):
+                pauli_str = 'I' * i + 'Z' + 'I' * (distance - 1) + 'Z' + 'I' * (self.n - i - distance - 1)
+                pauli_strings.append(pauli_str)
+
+        values = []
+        for pauli_string in pauli_strings:
+            values.append(self.get_zn_exp(pauli_string, counts=counts))
+        return values
+
     def get_zn_exp(self, pauli_string, counts=None):
         """
         Calculate the expectation value of an observable represented by a Pauli string,
@@ -526,5 +546,130 @@ def complex_fit(batch_x, batch_y):
             params = [100, 100]
         # self.decay_fit.append(params[0])
         # self.W_fit.append(params[1])
-        parameters.append(np.abs(params))
+        parameters.append(params)
     return parameters
+
+
+def full_complex_fit(batch_x, batch_y):
+    def model_func(times, *params):
+        n = batch_x.n
+        A = params[:n]
+        W = params[n:2 * n]
+        J = params[2 * n:2 * n + n - 1]
+        x_models = []
+        y_models = []
+
+        x_correlations = []
+        y_correlations = []
+
+        X = []
+        Y = []
+        for t in times:
+            for i in range(n):
+                x_model = (np.cos(W[i] * t)) * np.exp(-A[i] * t)
+                y_model = -(np.sin(W[i] * t)) * np.exp(-A[i] * t)
+                norm = 1
+                if i > 0:
+                    x_model += np.cos((W[i] + J[i - 1]) * t) * np.exp(-A[i] * t)
+                    y_model -= np.sin((W[i] + J[i - 1]) * t) * np.exp(-A[i] * t)
+                    norm += 1
+
+                if i < n - 1:
+                    x_model += np.cos((W[i] + J[i]) * t) * np.exp(-A[i] * t)  # Updated to use J[i] instead of J[i + 1]
+                    y_model -= np.sin((W[i] + J[i]) * t) * np.exp(-A[i] * t)  # Same here, for consistency
+                    norm += 1
+
+                if 0 < i < n - 1:
+                    x_model += np.cos((W[i] + J[i - 1] + J[i]) * t) * np.exp(-A[i] * t)
+                    y_model -= np.sin((W[i] + J[i - 1] + J[i]) * t) * np.exp(-A[i] * t)
+                    norm += 1
+                x_models.append(x_model / norm)
+                y_models.append(y_model / norm)
+
+                X.append(x_model / norm)
+                Y.append(y_model / norm)
+            for i in range(n - 1):
+                x_correlation = 0
+                norm = 0
+                if i < len(J):
+                    x_correlation += (np.cos((W[i] + W[i + 1] + J[i]) * t)) * np.exp(- (A[i] + A[i + 1]) * t)
+                    x_correlation += (np.cos((W[i] - W[i + 1]) * t)) * np.exp(-2 * A[i] * t)
+                    norm += 2
+                    if i + 1 < len(J):
+                        x_correlation += (np.cos((W[i] + W[i + 1] + J[i] + J[i + 1]) * t)) * np.exp(
+                            -(A[i] + A[i + 1]) * t)
+                        x_correlation += (np.cos((W[i + 1] - W[i] + J[i + 1]) * t)) * np.exp(-(A[i] + A[i + 1]) * t)
+                        norm += 2
+
+                if i - 1 >= 0:
+                    x_correlation += (np.cos((W[i] - W[i + 1] + J[i - 1]) * t)) * np.exp(-(A[i] + A[i + 1]) * t)
+                    x_correlation += (np.cos((W[i] + W[i + 1] + J[i] + J[i - 1]) * t)) * np.exp(-(A[i] + A[i + 1]) * t)
+                    norm += 2
+                    if i + 1 < len(J):
+                        x_correlation += (np.cos((W[i] - W[i + 1] + J[i - 1] - J[i + 1]) * t)) * np.exp(
+                            -(A[i] + A[i + 1]) * t)
+                        x_correlation += (np.cos((W[i] + W[i + 1] + J[i - 1] + J[i] + J[i + 1]) * t)) * np.exp(
+                            -(A[i] + A[i + 1]) * t)
+                        norm += 2
+
+                y_correlation = 0
+                norm = 0
+                if i < len(J):
+                    y_correlation -= (np.cos((W[i] + W[i + 1] + J[i]) * t)) * np.exp(-(A[i] + A[i + 1]) * t)
+                    y_correlation += (np.cos((W[i] - W[i + 1]) * t)) * np.exp(-(A[i] + A[i + 1]) * t)
+                    norm += 2
+                    if i + 1 < len(J):
+                        y_correlation += (np.cos((W[i + 1] - W[i] + J[i + 1]) * t)) * np.exp(-(A[i] + A[i + 1]) * t)
+                        y_correlation -= (np.cos((W[i] + W[i + 1] + J[i] + J[i + 1]) * t)) * np.exp(
+                            -(A[i] + A[i + 1]) * t)
+                        norm += 2
+
+                if i - 1 >= 0:
+                    y_correlation += (np.cos((W[i] - W[i + 1] + J[i - 1]) * t)) * np.exp(-(A[i] + A[i + 1]) * t)
+                    y_correlation -= (np.cos((W[i] + W[i + 1] + J[i] + J[i - 1]) * t)) * np.exp(-(A[i] + A[i + 1]) * t)
+                    norm += 2
+                    if i + 1 < len(J):
+                        y_correlation += (np.cos((W[i] - W[i + 1] + J[i - 1] - J[i + 1]) * t)) * np.exp(
+                            -(A[i] + A[i + 1]) * t)
+                        y_correlation -= (np.cos((W[i] + W[i + 1] + J[i - 1] + J[i] + J[i + 1]) * t)) * np.exp(
+                            -(A[i] + A[i + 1]) * t)
+                        norm += 2
+
+                y_correlations.append(y_correlation / norm)
+                x_correlations.append(x_correlation / norm)
+
+                X.append(x_correlation / norm)
+                Y.append(y_correlation / norm)
+
+            # return np.concatenate([x_models, x_correlations,y_models, y_correlations])
+        return np.concatenate([X, Y])
+
+    data_x = []
+    data_y = []
+    # cor_x = []
+    # cor_y = []
+
+    for i in range(batch_x.n):
+        # data_x.append(batch_x.get_zi(i))
+        # data_y.append(batch_y.get_zi(i))
+        data_x = [exp.get_n_nearest_neighbors(1) for exp in batch_x.RamseyExperiments]
+        data_y = [exp.get_n_nearest_neighbors(1) for exp in batch_y.RamseyExperiments]
+
+    # initial_guess = [1] * (2 * batch_x.n + (batch_x.n - 1))  # Adjusted to include J
+    initial_guess = [random.random() for i in range(2 * batch_x.n + (batch_x.n - 1))]
+    bounds_lower = [-2 * np.pi] * (2 * batch_x.n + (batch_x.n - 1))
+    bounds_upper = [2 * np.pi] * (2 * batch_x.n + (batch_x.n - 1))
+    bounds = (bounds_lower, bounds_upper)
+
+    # Perform the curve fitting
+    t_points = batch_x.delay
+    x_points = np.concatenate(data_x)
+    y_points = np.concatenate(data_y)
+    z_points = np.concatenate([x_points, y_points])
+    params, params_covariance, *c = curve_fit(model_func, t_points, z_points, p0=initial_guess, bounds=bounds,
+                                              method='trf')
+    guessed_decay = params[:batch_x.n][::-1]
+    guessed_W = params[batch_x.n:2 * batch_x.n][::-1]
+    guessed_J = params[2 * batch_x.n:3 * batch_x.n - 1][::-1]
+    return guessed_decay, guessed_W, guessed_J
+
