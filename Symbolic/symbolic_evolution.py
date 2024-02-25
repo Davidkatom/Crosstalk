@@ -90,23 +90,42 @@ def expectation_value(state, pauli_string):
     return simplify(expand_complex(decay_factor * (Dagger(state) * operator * state)))[0]
 
 
-def set_parameters(expr, W, J, A):
-    symbols = list(expr.free_symbols)
-    symbols_w = [symbol for symbol in symbols if 'ω' in str(symbol)]
-    symbols_j = [symbol for symbol in symbols if 'j' in str(symbol)]
-    symbols_a = [symbol for symbol in symbols if 'a' in str(symbol)]
-    for symbol in symbols_w:
-        expr = expr.subs(symbol, W[int(str(symbol)[1])])
-    for symbol in symbols_j:
-        expr = expr.subs(symbol, J[int(str(symbol)[1])])
-    for symbol in symbols_a:
-        expr = expr.subs(symbol, A[int(str(symbol)[1])])
-    return expr
+def set_parameters(expr, W=None, J=None, A=None, t=None):
+    symb = list(expr.free_symbols)
+    symbols_w = [symbol for symbol in symb if 'ω' in str(symbol)]
+    symbols_j = [symbol for symbol in symb if 'j' in str(symbol)]
+    symbols_a = [symbol for symbol in symb if 'a' in str(symbol)]
+    symbolT = symbols('t', real=True)
+
+    if t is not None:
+        expr = expr.subs(symbolT, t)
+
+    if W is not None:
+        W = W[::-1]
+        for symbol in symbols_w:
+            expr = expr.subs(symbol, W[int(str(symbol)[1])])
+
+    if J is not None:
+        J = J[::-1]
+        for symbol in symbols_j:
+            expr = expr.subs(symbol, J[int(str(symbol)[1])])
+    if A is not None:
+        A = A[::-1]
+        for symbol in symbols_a:
+            expr = expr.subs(symbol, A[int(str(symbol)[1])])
+
+    if expr.is_Number:
+        # Convert to a Python numerical type if possible
+        return float(expr)
+    else:
+        # Return the symbolic expression if still symbolic
+        return expr
 
 
 def to_func(expr):
     symbols = list(expr.free_symbols)
     return lambdify(symbols, expr, 'numpy')
+
 
 def get_n_nearest_neighbors(qubits, basis, neighbors=0):
     # This function generates Pauli strings for single qubits and n nearest neighbors
@@ -126,17 +145,50 @@ def get_n_nearest_neighbors(qubits, basis, neighbors=0):
     return pauli_strings
 
 
-def get_expectation_values(n, W, J, A, neighbors=0):
-    W = W[::-1]
-    J = J[::-1]
-    A = A[::-1]
+def get_expectation_values_exp(n, neighbors=0):
     operators = get_n_nearest_neighbors(n, 'X', neighbors) + get_n_nearest_neighbors(n, 'Y', neighbors)
 
     state = zero_state(n)
     state = apply_operator(state, H(n))
     state = evolve_state(state)
     expectation_values = [expectation_value(state, operator) for operator in operators]
+    return expectation_values
+
+
+def get_expectation_values(n, W, J, A, neighbors=0):
+    expectation_values = get_expectation_values_exp(n, neighbors)
     expectation_values = [set_parameters(expr, W, J, A) for expr in expectation_values]
     return [to_func(expr) for expr in expectation_values]
 
 
+def sort_key(parameter):
+    prefix_order = {'a': 1, 'ω': 2, 'j': 3}  # Define the order for each prefix
+    # Return a tuple that consists of the predefined order and the parameter to ensure stable sorting
+    return prefix_order.get(parameter[0].lower(), 4), parameter
+
+
+def minimize_functions(n, times, neighbors=0):
+    symbolT = symbols('t', real=True)
+
+    all_functions = []
+    functions = get_expectation_values_exp(n, neighbors)
+    for time in times:
+        for func in functions:
+            func = func.subs(symbolT, time)
+            all_functions.append(func)
+
+    # parameters = [all_functions[i].free_symbols for i in range(len(all_functions))]
+    # parameters = set.union(*parameters)
+    # parameters = [str(parameter) for parameter in parameters]
+    # parameters = sorted(parameters, key=sort_key)
+
+    return all_functions
+
+#
+# W = [1, 1, 1]
+# J = [1, 1]
+# A = [1, 1, 1]
+#
+# functions = minimize_functions(3, [0, 1, 2], 0)
+# functions_t = [set_parameters(expr, W, J, A) for expr in functions]
+# print(functions_t)

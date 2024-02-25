@@ -7,6 +7,10 @@ import qiskit.quantum_info as qi
 from qiskit import QuantumCircuit, Aer
 from scipy.linalg import expm
 from scipy.optimize import curve_fit, minimize
+from sympy import symbols, lambdify
+from tqdm import tqdm
+
+from Symbolic import symbolic_evolution
 
 # Loading your IBM Quantum account(s)
 service = QiskitRuntimeService(
@@ -550,110 +554,47 @@ def complex_fit(batch_x, batch_y):
     return parameters
 
 
-def full_complex_fit(batch_x, batch_y):
-    def model_func(times, *params):
+def one_by_one_fit(batch_x_detuning, batch_y_detuning, batch_x_crosstalk, batch_y_crosstalk):
+    n = batch_x_detuning.n
+    params = complex_fit(batch_x_detuning, batch_y_detuning)
+    W = [params[i][1] for i in range(n)]
+    decay = [params[i][0] for i in range(n)]
+
+    crosstalk_qubits_measured = batch_x_crosstalk.qubits_measured
+    params = complex_fit(batch_x_crosstalk, batch_y_crosstalk)
+    J = [params[i][1] - W[crosstalk_qubits_measured[i]] for i in range(n - 1)]
+    return decay, W, J
+
+
+def full_complex_fit(batch_x, batch_y, neighbors=0):
+    times = batch_x.delay
+    n = batch_x.n
+
+    data = []
+    for i in range(len(batch_x.RamseyExperiments)):
+        data.append(batch_x.RamseyExperiments[i].get_n_nearest_neighbors(neighbors))
+        data.append(batch_y.RamseyExperiments[i].get_n_nearest_neighbors(neighbors))
+
+    # symbolic_exp = symbolic_evolution.minimize_functions(n, times, neighbors=neighbors)
+
+    symbolic_exp = symbolic_evolution.get_expectation_values_exp(n, neighbors=neighbors)
+    t = symbols('t', real=True)
+    w = symbols(f'ω0:{n}', real=True)
+    j = symbols(f'j0:{n - 1}', real=True)
+    a = symbols(f'a0:{n}', real=True)
+
+    symbolic_exp = [lambdify([t, *w, *a, *j], expr, 'numpy') for expr in symbolic_exp]
+
+    def model_func(t, *params):
         n = batch_x.n
         A = params[:n]
         W = params[n:2 * n]
         J = params[2 * n:2 * n + n - 1]
-        x_models = []
-        y_models = []
-
-        x_correlations = []
-        y_correlations = []
-
-        X = []
-        Y = []
-        for t in times:
-            for i in range(n):
-                x_model = (np.cos(W[i] * t)) * np.exp(-A[i] * t)
-                y_model = -(np.sin(W[i] * t)) * np.exp(-A[i] * t)
-                norm = 1
-                if i > 0:
-                    x_model += np.cos((W[i] + J[i - 1]) * t) * np.exp(-A[i] * t)
-                    y_model -= np.sin((W[i] + J[i - 1]) * t) * np.exp(-A[i] * t)
-                    norm += 1
-
-                if i < n - 1:
-                    x_model += np.cos((W[i] + J[i]) * t) * np.exp(-A[i] * t)  # Updated to use J[i] instead of J[i + 1]
-                    y_model -= np.sin((W[i] + J[i]) * t) * np.exp(-A[i] * t)  # Same here, for consistency
-                    norm += 1
-
-                if 0 < i < n - 1:
-                    x_model += np.cos((W[i] + J[i - 1] + J[i]) * t) * np.exp(-A[i] * t)
-                    y_model -= np.sin((W[i] + J[i - 1] + J[i]) * t) * np.exp(-A[i] * t)
-                    norm += 1
-                x_models.append(x_model / norm)
-                y_models.append(y_model / norm)
-
-                X.append(x_model / norm)
-                Y.append(y_model / norm)
-            for i in range(n - 1):
-                x_correlation = 0
-                norm = 0
-                if i < len(J):
-                    x_correlation += (np.cos((W[i] + W[i + 1] + J[i]) * t)) * np.exp(- (A[i] + A[i + 1]) * t)
-                    x_correlation += (np.cos((W[i] - W[i + 1]) * t)) * np.exp(-2 * A[i] * t)
-                    norm += 2
-                    if i + 1 < len(J):
-                        x_correlation += (np.cos((W[i] + W[i + 1] + J[i] + J[i + 1]) * t)) * np.exp(
-                            -(A[i] + A[i + 1]) * t)
-                        x_correlation += (np.cos((W[i + 1] - W[i] + J[i + 1]) * t)) * np.exp(-(A[i] + A[i + 1]) * t)
-                        norm += 2
-
-                if i - 1 >= 0:
-                    x_correlation += (np.cos((W[i] - W[i + 1] + J[i - 1]) * t)) * np.exp(-(A[i] + A[i + 1]) * t)
-                    x_correlation += (np.cos((W[i] + W[i + 1] + J[i] + J[i - 1]) * t)) * np.exp(-(A[i] + A[i + 1]) * t)
-                    norm += 2
-                    if i + 1 < len(J):
-                        x_correlation += (np.cos((W[i] - W[i + 1] + J[i - 1] - J[i + 1]) * t)) * np.exp(
-                            -(A[i] + A[i + 1]) * t)
-                        x_correlation += (np.cos((W[i] + W[i + 1] + J[i - 1] + J[i] + J[i + 1]) * t)) * np.exp(
-                            -(A[i] + A[i + 1]) * t)
-                        norm += 2
-
-                y_correlation = 0
-                norm = 0
-                if i < len(J):
-                    y_correlation -= (np.cos((W[i] + W[i + 1] + J[i]) * t)) * np.exp(-(A[i] + A[i + 1]) * t)
-                    y_correlation += (np.cos((W[i] - W[i + 1]) * t)) * np.exp(-(A[i] + A[i + 1]) * t)
-                    norm += 2
-                    if i + 1 < len(J):
-                        y_correlation += (np.cos((W[i + 1] - W[i] + J[i + 1]) * t)) * np.exp(-(A[i] + A[i + 1]) * t)
-                        y_correlation -= (np.cos((W[i] + W[i + 1] + J[i] + J[i + 1]) * t)) * np.exp(
-                            -(A[i] + A[i + 1]) * t)
-                        norm += 2
-
-                if i - 1 >= 0:
-                    y_correlation += (np.cos((W[i] - W[i + 1] + J[i - 1]) * t)) * np.exp(-(A[i] + A[i + 1]) * t)
-                    y_correlation -= (np.cos((W[i] + W[i + 1] + J[i] + J[i - 1]) * t)) * np.exp(-(A[i] + A[i + 1]) * t)
-                    norm += 2
-                    if i + 1 < len(J):
-                        y_correlation += (np.cos((W[i] - W[i + 1] + J[i - 1] - J[i + 1]) * t)) * np.exp(
-                            -(A[i] + A[i + 1]) * t)
-                        y_correlation -= (np.cos((W[i] + W[i + 1] + J[i - 1] + J[i] + J[i + 1]) * t)) * np.exp(
-                            -(A[i] + A[i + 1]) * t)
-                        norm += 2
-
-                y_correlations.append(y_correlation / norm)
-                x_correlations.append(x_correlation / norm)
-
-                X.append(x_correlation / norm)
-                Y.append(y_correlation / norm)
-
-            # return np.concatenate([x_models, x_correlations,y_models, y_correlations])
-        return np.concatenate([X, Y])
-
-    data_x = []
-    data_y = []
-    # cor_x = []
-    # cor_y = []
-
-    for i in range(batch_x.n):
-        # data_x.append(batch_x.get_zi(i))
-        # data_y.append(batch_y.get_zi(i))
-        data_x = [exp.get_n_nearest_neighbors(1) for exp in batch_x.RamseyExperiments]
-        data_y = [exp.get_n_nearest_neighbors(1) for exp in batch_y.RamseyExperiments]
+        functions = np.array([expr(t, *W, *A, *J) for expr in symbolic_exp])
+        functions = functions.T
+        return np.concatenate(functions)
+        # functions = np.array([symbolic_evolution.set_parameters(expr, W, J, A) for expr in symbolic_exp])
+        # return functions
 
     # initial_guess = [1] * (2 * batch_x.n + (batch_x.n - 1))  # Adjusted to include J
     initial_guess = [random.random() for i in range(2 * batch_x.n + (batch_x.n - 1))]
@@ -663,13 +604,68 @@ def full_complex_fit(batch_x, batch_y):
 
     # Perform the curve fitting
     t_points = batch_x.delay
-    x_points = np.concatenate(data_x)
-    y_points = np.concatenate(data_y)
-    z_points = np.concatenate([x_points, y_points])
-    params, params_covariance, *c = curve_fit(model_func, t_points, z_points, p0=initial_guess, bounds=bounds,
-                                              method='trf')
+    z_points = np.concatenate(data)
+    params, params_covariance, *c = curve_fit(model_func, t_points, z_points, p0=initial_guess, bounds=bounds)
     guessed_decay = params[:batch_x.n][::-1]
     guessed_W = params[batch_x.n:2 * batch_x.n][::-1]
     guessed_J = params[2 * batch_x.n:3 * batch_x.n - 1][::-1]
     return guessed_decay, guessed_W, guessed_J
 
+
+def ramsey_global(n, total_shots, delay, L, W, J):
+    batch_x = []
+    batch_y = []
+    for t in delay:
+        shots = int(total_shots / 2)
+        exp_x = RamseyExperiment(n, t, shots, J, W, L, basis="X")
+        exp_y = RamseyExperiment(n, t, shots, J, W, L, basis="Y")
+        exp_x.create_full_circuit()
+        exp_y.create_full_circuit()
+        exp_x.add_decay_raw()
+        exp_y.add_decay_raw()
+        batch_x.append(exp_x)
+        batch_y.append(exp_y)
+
+    batch_x = RamseyBatch(batch_x)
+    batch_y = RamseyBatch(batch_y)
+    return batch_x, batch_y
+
+
+def ramsey_local(n, total_shots, delay, L, W, J):
+    batch_x_det = []
+    batch_x_cross = []
+    batch_y_det = []
+    batch_y_cross = []
+
+    for t in delay:
+        shots = int(total_shots / 4)
+        exp_x_det = RamseyExperiment(n, t, shots, J, W, L, basis="X")
+        exp_y_det = RamseyExperiment(n, t, shots, J, W, L, basis="Y")
+        exp_x_cross = RamseyExperiment(n, t, shots, J, W, L, basis="X")
+        exp_y_cross = RamseyExperiment(n, t, shots, J, W, L, basis="Y")
+
+        exp_x_det.create_circuit_detuning()
+        exp_y_det.create_circuit_detuning()
+        exp_x_cross.create_circuit_crosstalk()
+        exp_y_cross.create_circuit_crosstalk()
+
+        exp_x_det.add_decay_raw()
+        exp_y_det.add_decay_raw()
+        exp_x_cross.add_decay_raw()
+        exp_y_cross.add_decay_raw()
+
+        batch_x_det.append(exp_x_det)
+        batch_y_det.append(exp_y_det)
+        batch_x_cross.append(exp_x_cross)
+        batch_y_cross.append(exp_y_cross)
+
+    batch_x_det = RamseyBatch(batch_x_det)
+    batch_y_det = RamseyBatch(batch_y_det)
+    batch_x_cross = RamseyBatch(batch_x_cross)
+    batch_y_cross = RamseyBatch(batch_y_cross)
+    return batch_x_det, batch_y_det, batch_x_cross, batch_y_cross
+
+
+def percent_error(correct, fitted):
+    mse = np.mean((correct - fitted) ** 2)
+    return np.sqrt(mse) / np.mean(np.abs(correct)) * 100
