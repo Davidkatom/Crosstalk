@@ -7,10 +7,6 @@ import qiskit.quantum_info as qi
 from qiskit import QuantumCircuit, Aer
 from scipy.linalg import expm
 from scipy.optimize import curve_fit, minimize
-from sympy import symbols, lambdify
-from tqdm import tqdm
-
-from Symbolic import symbolic_evolution
 
 # Loading your IBM Quantum account(s)
 service = QiskitRuntimeService(
@@ -86,6 +82,10 @@ class RamseyExperiment:
         U = expm((-1j * self.delay) * effective_hem(self.n, self.J, self.W))
         U = qi.Operator(U)
         circuit = QuantumCircuit(q, c)
+
+
+        ###TO REMOVE
+
 
         for i in range(self.n):
             circuit.h(i)
@@ -517,106 +517,15 @@ class RamseyBatch:
                 params.append({'gamma': np.nan, 'w0': np.nan})
         return params
 
-    def calc_dist(self, fitted_values, correct_values):
-        fitted_values = np.array(fitted_values)
-        correct_values = np.array(correct_values)
-        mse = (fitted_values - correct_values) ** 2 / len(fitted_values)
-        precent_error = (np.sqrt(np.abs(mse)) / np.abs(correct_values)) * 100
-        return precent_error
-
-
-def complex_fit(batch_x, batch_y):
-    def model_func(t, a, w):
-        x_model = (np.cos(w * t)) * np.exp(-a * t)
-        y_model = -(np.sin(w * t)) * np.exp(-a * t)
-        return np.concatenate([x_model, y_model])
-
-    data_x = []
-    data_y = []
-
-    for i in range(batch_x.n):
-        data_x.append(batch_x.get_zi(i))
-        data_y.append(batch_y.get_zi(i))
-
-    parameters = []
-    for i in range(len(data_x)):
-        initial_guess = [1, 1]
-        # Perform the curve fitting
-        t_points = batch_x.delay
-        z_points = np.concatenate([np.array(data_x[i]), np.array(data_y[i])])
-        try:
-            params, params_covariance, *c = curve_fit(model_func, t_points, z_points, p0=initial_guess)
-        except:
-            params = [100, 100]
-        # self.decay_fit.append(params[0])
-        # self.W_fit.append(params[1])
-        parameters.append(params)
-    return parameters
-
-
-def one_by_one_fit(batch_x_detuning, batch_y_detuning, batch_x_crosstalk, batch_y_crosstalk):
-    n = batch_x_detuning.n
-    params = complex_fit(batch_x_detuning, batch_y_detuning)
-    W = [params[i][1] for i in range(n)]
-    decay = [params[i][0] for i in range(n)]
-
-    crosstalk_qubits_measured = batch_x_crosstalk.qubits_measured
-    params = complex_fit(batch_x_crosstalk, batch_y_crosstalk)
-    J = [params[i][1] - W[crosstalk_qubits_measured[i]] for i in range(n - 1)]
-    return decay, W, J
-
-
-def full_complex_fit(batch_x, batch_y, neighbors=0):
-    times = batch_x.delay
-    n = batch_x.n
-
-    data = []
-    for i in range(len(batch_x.RamseyExperiments)):
-        data.append(batch_x.RamseyExperiments[i].get_n_nearest_neighbors(neighbors))
-        data.append(batch_y.RamseyExperiments[i].get_n_nearest_neighbors(neighbors))
-
-    # symbolic_exp = symbolic_evolution.minimize_functions(n, times, neighbors=neighbors)
-
-    symbolic_exp = symbolic_evolution.get_expectation_values_exp(n, neighbors=neighbors)
-    t = symbols('t', real=True)
-    w = symbols(f'ω0:{n}', real=True)
-    j = symbols(f'j0:{n - 1}', real=True)
-    a = symbols(f'a0:{n}', real=True)
-
-    symbolic_exp = [lambdify([t, *w, *a, *j], expr, 'numpy') for expr in symbolic_exp]
-
-    def model_func(t, *params):
-        n = batch_x.n
-        A = params[:n]
-        W = params[n:2 * n]
-        J = params[2 * n:2 * n + n - 1]
-        functions = np.array([expr(t, *W, *A, *J) for expr in symbolic_exp])
-        functions = functions.T
-        return np.concatenate(functions)
-        # functions = np.array([symbolic_evolution.set_parameters(expr, W, J, A) for expr in symbolic_exp])
-        # return functions
-
-    # initial_guess = [1] * (2 * batch_x.n + (batch_x.n - 1))  # Adjusted to include J
-    initial_guess = [random.random() for i in range(2 * batch_x.n + (batch_x.n - 1))]
-    bounds_lower = [-2 * np.pi] * (2 * batch_x.n + (batch_x.n - 1))
-    bounds_upper = [2 * np.pi] * (2 * batch_x.n + (batch_x.n - 1))
-    bounds = (bounds_lower, bounds_upper)
-
-    # Perform the curve fitting
-    t_points = batch_x.delay
-    z_points = np.concatenate(data)
-    params, params_covariance, *c = curve_fit(model_func, t_points, z_points, p0=initial_guess, bounds=bounds)
-    guessed_decay = params[:batch_x.n][::-1]
-    guessed_W = params[batch_x.n:2 * batch_x.n][::-1]
-    guessed_J = params[2 * batch_x.n:3 * batch_x.n - 1][::-1]
-    return guessed_decay, guessed_W, guessed_J
-
 
 def ramsey_global(n, total_shots, delay, L, W, J):
     batch_x = []
     batch_y = []
+    shots = total_shots / len(delay)
+    shots = int(shots / 2)
+
     for t in delay:
-        shots = int(total_shots / 2)
+        # shots = int(total_shots / 2)
         exp_x = RamseyExperiment(n, t, shots, J, W, L, basis="X")
         exp_y = RamseyExperiment(n, t, shots, J, W, L, basis="Y")
         exp_x.create_full_circuit()
@@ -636,9 +545,11 @@ def ramsey_local(n, total_shots, delay, L, W, J):
     batch_x_cross = []
     batch_y_det = []
     batch_y_cross = []
+    shots = total_shots / len(delay)
+    shots = int(shots / 4)
 
     for t in delay:
-        shots = int(total_shots / 4)
+        # shots = int(total_shots / 4)
         exp_x_det = RamseyExperiment(n, t, shots, J, W, L, basis="X")
         exp_y_det = RamseyExperiment(n, t, shots, J, W, L, basis="Y")
         exp_x_cross = RamseyExperiment(n, t, shots, J, W, L, basis="X")
@@ -666,6 +577,28 @@ def ramsey_local(n, total_shots, delay, L, W, J):
     return batch_x_det, batch_y_det, batch_x_cross, batch_y_cross
 
 
-def percent_error(correct, fitted):
-    mse = np.mean((correct - fitted) ** 2)
-    return np.sqrt(mse) / np.mean(np.abs(correct)) * 100
+
+def ramsey_local_X(n, total_shots, delay, L, W, J):
+    batch_x_det = []
+    batch_x_cross = []
+    shots = total_shots / len(delay)
+    shots = int(shots / 2)
+    for t in delay:
+        # shots = int(total_shots / 2)
+        exp_x_det = RamseyExperiment(n, t, shots, J, W, L, basis="X")
+        exp_x_cross = RamseyExperiment(n, t, shots, J, W, L, basis="X")
+
+        exp_x_det.create_circuit_detuning()
+        exp_x_cross.create_circuit_crosstalk()
+
+        exp_x_det.add_decay_raw()
+        exp_x_cross.add_decay_raw()
+
+        batch_x_det.append(exp_x_det)
+        batch_x_cross.append(exp_x_cross)
+
+    batch_x_det = RamseyBatch(batch_x_det)
+    batch_x_cross = RamseyBatch(batch_x_cross)
+    return batch_x_det, batch_x_cross
+
+

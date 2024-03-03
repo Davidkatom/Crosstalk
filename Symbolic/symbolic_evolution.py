@@ -23,6 +23,13 @@ def plus_state(n):
     return (1 / sqrt(2)) * TensorProduct(plus_state(n - 1), plus_state(1))
 
 
+def Ry(thetas):
+    n = len(thetas)
+    if n == 1:
+        return Matrix([[np.cos(thetas[0] / 2), -np.sin(thetas[0] / 2)], [np.sin(thetas[0] / 2), np.cos(thetas[0] / 2)]])
+    return TensorProduct(Ry(thetas[:-1]), Ry(thetas[-1:]))
+
+
 def evolve_state(state):
     n = np.log2(len(state)).astype(int)
     t = symbols('t', real=True)
