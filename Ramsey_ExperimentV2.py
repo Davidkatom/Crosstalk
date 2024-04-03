@@ -83,12 +83,33 @@ class RamseyExperiment:
         U = qi.Operator(U)
         circuit = QuantumCircuit(q, c)
 
-
-        ###TO REMOVE
-
-
         for i in range(self.n):
             circuit.h(i)
+        circuit.barrier()
+        circuit.unitary(U, [i for i in range(self.n)])
+        circuit.barrier()
+        for i in range(self.n):
+            if self.basis == "Y":
+                circuit.sdg(i)
+            circuit.h(i)
+            circuit.measure(i, c[i])
+        self.circuit = circuit
+
+        self.result = self._run()
+        self.z = self._get_z_exp()
+
+    def create_full_circuit_with_rot(self, rot):
+        q = QuantumRegister(self.n)
+        c = ClassicalRegister(self.n)
+        U = expm((-1j * self.delay) * effective_hem(self.n, self.J, self.W))
+        U = qi.Operator(U)
+        circuit = QuantumCircuit(q, c)
+
+        ###TO REMOVE
+        thetas = rot
+        for i in range(self.n):
+            # circuit.h(i)
+            circuit.ry(thetas, i)
         circuit.barrier()
         circuit.unitary(U, [i for i in range(self.n)])
         circuit.barrier()
@@ -305,6 +326,20 @@ class RamseyExperiment:
             for i in range(self.n - distance):
                 pauli_str = 'I' * i + 'Z' + 'I' * (distance - 1) + 'Z' + 'I' * (self.n - i - distance - 1)
                 pauli_strings.append(pauli_str)
+
+        values = []
+        for pauli_string in pauli_strings:
+            values.append(self.get_zn_exp(pauli_string, counts=counts))
+        return values
+
+    def get_nth_nearest_neighbors(self, n_neighbors, counts=None):
+        # This function generates Pauli strings for single qubits and n nearest neighbors
+        pauli_strings = []
+
+        # n nearest neighbor pairs
+        for i in range(self.n - n_neighbors):
+            pauli_str = 'I' * i + 'Z' + 'I' * (n_neighbors - 1) + 'Z' + 'I' * (self.n - i - n_neighbors - 1)
+            pauli_strings.append(pauli_str)
 
         values = []
         for pauli_string in pauli_strings:
@@ -540,6 +575,28 @@ def ramsey_global(n, total_shots, delay, L, W, J):
     return batch_x, batch_y
 
 
+def ramsey_global_with_rot(n, total_shots, delay, L, W, J, rot):
+    batch_x = []
+    batch_y = []
+    shots = total_shots / len(delay)
+    shots = int(shots / 2)
+
+    for t in delay:
+        # shots = int(total_shots / 2)
+        exp_x = RamseyExperiment(n, t, shots, J, W, L, basis="X")
+        exp_y = RamseyExperiment(n, t, shots, J, W, L, basis="Y")
+        exp_x.create_full_circuit_with_rot(rot)
+        exp_y.create_full_circuit_with_rot(rot)
+        exp_x.add_decay_raw()
+        exp_y.add_decay_raw()
+        batch_x.append(exp_x)
+        batch_y.append(exp_y)
+
+    batch_x = RamseyBatch(batch_x)
+    batch_y = RamseyBatch(batch_y)
+    return batch_x, batch_y
+
+
 def ramsey_local(n, total_shots, delay, L, W, J):
     batch_x_det = []
     batch_x_cross = []
@@ -577,7 +634,6 @@ def ramsey_local(n, total_shots, delay, L, W, J):
     return batch_x_det, batch_y_det, batch_x_cross, batch_y_cross
 
 
-
 def ramsey_local_X(n, total_shots, delay, L, W, J):
     batch_x_det = []
     batch_x_cross = []
@@ -600,5 +656,3 @@ def ramsey_local_X(n, total_shots, delay, L, W, J):
     batch_x_det = RamseyBatch(batch_x_det)
     batch_x_cross = RamseyBatch(batch_x_cross)
     return batch_x_det, batch_x_cross
-
-

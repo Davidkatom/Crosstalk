@@ -5,6 +5,7 @@ from scipy.optimize import curve_fit
 from sympy import symbols, lambdify
 
 from Symbolic import symbolic_evolution
+import sympy as sp
 
 
 def complex_fit(batch_x, batch_y):
@@ -45,7 +46,6 @@ def fit_X(batch_x):
 
     for i in range(batch_x.n):
         data_x.append(batch_x.get_zi(i))
-
 
     parameters = []
     for i in range(len(data_x)):
@@ -88,7 +88,7 @@ def one_by_one_X(batch_x_detuning, batch_x_crosstalk):
     return decay, W, J
 
 
-def full_complex_fit(batch_x, batch_y, neighbors=0):
+def full_complex_fit(batch_x, batch_y, neighbors=0, W_given=None, J_given=None, decay_given=None):
     n = batch_x.n
 
     data = []
@@ -108,9 +108,19 @@ def full_complex_fit(batch_x, batch_y, neighbors=0):
 
     def model_func(t, *params):
         n = batch_x.n
-        A = params[:n]
-        W = params[n:2 * n]
-        J = params[2 * n:2 * n + n - 1]
+        W = W_given
+        J = J_given
+        A = decay_given
+        i = 0
+        if decay_given is None:
+            A = params[:n]
+            i += n
+        if W_given is None:
+            W = params[i:i + n]
+            i += n
+        if J_given is None:
+            J = params[i:i + n - 1]
+
         functions = np.array([expr(t, *W, *A, *J) for expr in symbolic_exp])
         functions = functions.T
         return np.concatenate(functions)
@@ -118,9 +128,34 @@ def full_complex_fit(batch_x, batch_y, neighbors=0):
         # return functions
 
     # initial_guess = [1] * (2 * batch_x.n + (batch_x.n - 1))  # Adjusted to include J
-    initial_guess = [random.random() for i in range(2 * batch_x.n + (batch_x.n - 1))]
-    bounds_lower = [-2 * np.pi] * (2 * batch_x.n + (batch_x.n - 1))
-    bounds_upper = [2 * np.pi] * (2 * batch_x.n + (batch_x.n - 1))
+    # initial_guess = [random.random() for i in range(2 * batch_x.n + (batch_x.n - 1))]
+    initial_guess_A = []
+    initial_guess_W = []
+    initial_guess_J = []
+
+    bounds_lower_W = []
+    bounds_upper_W = []
+    bounds_lower_J = []
+    bounds_upper_J = []
+    bounds_lower_A = []
+    bounds_upper_A = []
+
+    if decay_given is None:
+        initial_guess_A = [random.random() for i in range(batch_x.n)]
+        bounds_lower_A = [0] * batch_x.n
+        bounds_upper_A = [2 * np.pi] * batch_x.n
+    if W_given is None:
+        initial_guess_W = [random.random() for i in range(batch_x.n)]
+        bounds_lower_W = [-2 * np.pi] * batch_x.n
+        bounds_upper_W = [2 * np.pi] * batch_x.n
+    if J_given is None:
+        initial_guess_J = [random.random() for i in range(batch_x.n - 1)]
+        bounds_lower_J = [-2 * np.pi] * (batch_x.n - 1)
+        bounds_upper_J = [2 * np.pi] * (batch_x.n - 1)
+    initial_guess = np.concatenate([initial_guess_A, initial_guess_W, initial_guess_J])
+
+    bounds_lower = np.concatenate([bounds_lower_A, bounds_lower_W, bounds_lower_J])
+    bounds_upper = np.concatenate([bounds_upper_A, bounds_upper_W, bounds_upper_J])
     bounds = (bounds_lower, bounds_upper)
 
     # Perform the curve fitting
@@ -144,3 +179,110 @@ def calc_dist(fitted_values, correct_values):
     mse = (fitted_values - correct_values) ** 2 / len(fitted_values)
     precent_error = (np.sqrt(np.abs(mse)) / np.abs(correct_values)) * 100
     return precent_error
+
+
+def full_complex_fit_test(batch_x_rot, batch_y_rot, batch_x_rot2, batch_y_rot2, neighbors=0, rot1=np.pi,
+                          rot2=np.pi / 2):
+    n = batch_x_rot.n
+
+    data = []
+    for i in range(len(batch_x_rot.RamseyExperiments)):
+        data.append(batch_x_rot.RamseyExperiments[i].get_n_nearest_neighbors(0))
+        data.append(batch_y_rot.RamseyExperiments[i].get_n_nearest_neighbors(0))
+
+    # symbolic_exp = symbolic_evolution.minimize_functions(n, times, neighbors=neighbors)
+
+    symbolic_exp = symbolic_evolution.get_expectation_values_exp(n, neighbors=0, rot=rot1)
+    t = symbols('t', real=True)
+    w = symbols(f'ω0:{n}', real=True)
+    j = symbols(f'j0:{n - 1}', real=True)
+    a = symbols(f'a0:{n}', real=True)
+
+    threshold = 0.1
+    symbolic_exp = [sp.expand(function) for function in symbolic_exp]
+    symbolic_exp = [func.as_ordered_terms() for func in symbolic_exp]
+
+    filtered = []
+    for func in symbolic_exp:
+        filtered_terms = [term for term in func if abs(list(term.as_coefficients_dict().values())[0]) >= threshold]
+        filtered_terms = sum(filtered_terms)
+        filtered.append(filtered_terms)
+
+    symbolic_exp = filtered
+
+    symbolic_exp = [lambdify([t, *w, *a, *j], expr, 'numpy') for expr in symbolic_exp]
+
+    def model_func(t, *params):
+        n = batch_x_rot.n
+        A = params[:n]
+        W = params[n:2 * n]
+        # J = params[2 * n:2 * n + n - 1]
+        J = [0] * (n - 1)
+        functions = np.array([expr(t, *W, *A, *J) for expr in symbolic_exp])
+        functions = functions.T
+        return np.concatenate(functions)
+        # functions = np.array([symbolic_evolution.set_parameters(expr, W, J, A) for expr in symbolic_exp])
+        # return functions
+
+    # initial_guess = [random.random() for i in range(2 * batch_x.n + (batch_x.n - 1))]
+    initial_guess = [random.random() for i in range(2 * batch_x_rot.n)]
+
+    bounds_lower_A = [0] * batch_x_rot.n
+    bounds_upper_A = [2 * np.pi] * batch_x_rot.n
+    bounds_lower_W = [-2 * np.pi] * batch_x_rot.n
+    bounds_upper_W = [2 * np.pi] * batch_x_rot.n
+
+    bounds_lower = np.concatenate([bounds_lower_A, bounds_lower_W])
+    bounds_upper = np.concatenate([bounds_upper_A, bounds_upper_W])
+
+    bounds = (bounds_lower, bounds_upper)
+
+    # Perform the curve fitting
+    t_points = batch_x_rot.delay
+    z_points = np.concatenate(data)
+    params, params_covariance, *c = curve_fit(model_func, t_points, z_points, p0=initial_guess, bounds=bounds)
+    guessed_decay = params[:batch_x_rot.n][::-1]
+    guessed_W = params[batch_x_rot.n:2 * batch_x_rot.n][::-1]
+
+    data2 = []
+    for i in range(len(batch_x_rot.RamseyExperiments)):
+        data2.append(batch_x_rot2.RamseyExperiments[i].get_n_nearest_neighbors(0))
+        data2.append(batch_y_rot2.RamseyExperiments[i].get_n_nearest_neighbors(0))
+
+    symbolic_exp = symbolic_evolution.get_expectation_values_exp(n, neighbors=0, rot=rot2)
+    symbolic_exp = [sp.expand(function) for function in symbolic_exp]
+    symbolic_exp = [func.as_ordered_terms() for func in symbolic_exp]
+
+    filtered = []
+    for func in symbolic_exp:
+        filtered_terms = [term for term in func if abs(list(term.as_coefficients_dict().values())[0]) >= threshold]
+        filtered_terms = sum(filtered_terms)
+        filtered.append(filtered_terms)
+
+    symbolic_exp = filtered
+
+    symbolic_exp = [lambdify([t, *w, *a, *j], expr, 'numpy') for expr in symbolic_exp]
+
+    def model_func2(t, *params):
+        n = batch_x_rot.n
+        A = guessed_decay[::-1]
+        W = guessed_W[::-1]
+        J = params
+        functions = np.array([expr(t, *W, *A, *J) for expr in symbolic_exp])
+        functions = functions.T
+        return np.concatenate(functions)
+        # functions = np.array([symbolic_evolution.set_parameters(expr, W, J, A) for expr in symbolic_exp])
+        # return functions
+
+    initial_guess = [random.random() for i in range(batch_x_rot2.n - 1)]
+    bounds_lower = [-2 * np.pi] * (batch_x_rot2.n - 1)
+    bounds_upper = [2 * np.pi] * (batch_x_rot2.n - 1)
+    bounds = (bounds_lower, bounds_upper)
+
+    # Perform the curve fitting
+    t_points = batch_x_rot2.delay
+    z_points = np.concatenate(data2)
+    params, params_covariance, *c = curve_fit(model_func2, t_points, z_points, p0=initial_guess, bounds=bounds)
+
+    guessed_J = params[::-1]
+    return guessed_decay, guessed_W, guessed_J

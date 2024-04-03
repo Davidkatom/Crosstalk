@@ -1,3 +1,5 @@
+import random
+
 import numpy as np
 from sympy import Matrix, symbols, exp, I, simplify, sqrt, expand_complex, lambdify
 from sympy.physics.quantum import Dagger
@@ -28,6 +30,31 @@ def Ry(thetas):
     if n == 1:
         return Matrix([[np.cos(thetas[0] / 2), -np.sin(thetas[0] / 2)], [np.sin(thetas[0] / 2), np.cos(thetas[0] / 2)]])
     return TensorProduct(Ry(thetas[:-1]), Ry(thetas[-1:]))
+
+
+def Rz(thetas):
+    n = len(thetas)
+    if n == 1:
+        return Matrix([[exp(-I * thetas[0] / 2), 0], [0, exp(I * thetas[0] / 2)]])
+    return TensorProduct(Rz(thetas[:-1]), Rz(thetas[-1:]))
+
+
+def Rx(thetas):
+    n = len(thetas)
+    if n == 1:
+        return Matrix(
+            [[np.cos(thetas[0] / 2), -I * np.sin(thetas[0] / 2)], [-I * np.sin(thetas[0] / 2), np.cos(thetas[0] / 2)]])
+    return TensorProduct(Rx(thetas[:-1]), Rx(thetas[-1:]))
+
+
+def random_state(state):
+    n = np.log2(len(state)).astype(int)
+    thetasY = [random.uniform(0.25 * np.pi, 1.75 * np.pi) for _ in range(n)]
+    # thetasX = [random.uniform(0, 2 * np.pi) for _ in range(n)]
+    thetasZ = [random.uniform(0, 2 * np.pi) for _ in range(n)]
+    state = apply_operator(state, Ry(thetasY))
+    state = apply_operator(state, Rz(thetasZ))
+    return state
 
 
 def evolve_state(state):
@@ -152,11 +179,38 @@ def get_n_nearest_neighbors(qubits, basis, neighbors=0):
     return pauli_strings
 
 
-def get_expectation_values_exp(n, neighbors=0):
+def get_nth_nearest_neighbors(qubits, basis, neighbors=0):
+    # This function generates Pauli strings for single qubits and n nearest neighbors
+    pauli_strings = []  # n nearest neighbor pairs
+    for i in range(qubits - neighbors):
+        pauli_str = 'I' * i + basis + 'I' * (neighbors - 1) + basis + 'I' * (qubits - i - neighbors - 1)
+        pauli_strings.append(pauli_str)
+
+    return pauli_strings
+
+
+def get_expectation_values_exp(n, neighbors=0, rot=None):
     operators = get_n_nearest_neighbors(n, 'X', neighbors) + get_n_nearest_neighbors(n, 'Y', neighbors)
 
     state = zero_state(n)
-    state = apply_operator(state, H(n))
+    if rot is None:
+        state = apply_operator(state, H(n))
+    else:
+        state = apply_operator(state, Ry([rot] * n))
+    state = evolve_state(state)
+    expectation_values = [expectation_value(state, operator) for operator in operators]
+    return expectation_values
+
+
+def get_expectation_of_nth(n, neighbors=0, rot=None):
+
+    operators = get_nth_nearest_neighbors(n, 'X', neighbors) + get_nth_nearest_neighbors(n, 'Y', neighbors)
+
+    state = zero_state(n)
+    if rot is None:
+        state = apply_operator(state, H(n))
+    else:
+        state = apply_operator(state, Ry([rot] * n))
     state = evolve_state(state)
     expectation_values = [expectation_value(state, operator) for operator in operators]
     return expectation_values
