@@ -1,7 +1,7 @@
 import random
 
 import numpy as np
-from scipy.optimize import curve_fit
+from scipy.optimize import curve_fit, least_squares
 from sympy import symbols, lambdify
 
 from Symbolic import symbolic_evolution
@@ -167,7 +167,62 @@ def full_complex_fit(batch_x, batch_y, neighbors=0, W_given=None, J_given=None, 
     guessed_J = params[2 * batch_x.n:3 * batch_x.n - 1][::-1]
     return guessed_decay, guessed_W, guessed_J
 
+def full_complex_fit_modified(batch_x, batch_y, neighbors=0, W_given=None, J_given=None, decay_given=None):
+    n = batch_x.n
 
+    data = []
+    for i in range(len(batch_x.RamseyExperiments)):
+        data.append(batch_x.RamseyExperiments[i].get_n_nearest_neighbors(neighbors))
+        data.append(batch_y.RamseyExperiments[i].get_n_nearest_neighbors(neighbors))
+
+    symbolic_exp = symbolic_evolution.get_expectation_values_exp(n, neighbors=neighbors)
+    t = symbols('t', real=True)
+    w = symbols(f'ω0:{n}', real=True)
+    j = symbols(f'j0:{n - 1}', real=True)
+    a = symbols(f'a0:{n}', real=True)
+
+    symbolic_exp = [lambdify([t, *w, *a, *j], expr, 'numpy') for expr in symbolic_exp]
+
+    def residuals(params, t, data):
+        n = batch_x.n
+        W = W_given if W_given is not None else params[:n]
+        A = decay_given if decay_given is not None else params[n:2*n]
+        J = J_given if J_given is not None else params[2*n:3*n-1]
+
+        model_values = np.concatenate([expr(t, *W, *A, *J) for expr in symbolic_exp]).T
+        return np.abs(data - model_values)
+
+    initial_guess_A, initial_guess_W, initial_guess_J = [], [], []
+    bounds_lower, bounds_upper = [], []
+
+    # Adjust these bounds and initial guesses as per your model's needs
+    if decay_given is None:
+        initial_guess_A = [random.random() for _ in range(n)]
+        bounds_lower.extend([0] * n)
+        bounds_upper.extend([2 * np.pi] * n)
+    if W_given is None:
+        initial_guess_W = [random.random() for _ in range(n)]
+        bounds_lower.extend([-2 * np.pi] * n)
+        bounds_upper.extend([2 * np.pi] * n)
+    if J_given is None:
+        initial_guess_J = [random.random() for _ in range(n - 1)]
+        bounds_lower.extend([-2 * np.pi] * (n - 1))
+        bounds_upper.extend([2 * np.pi] * (n - 1))
+
+    initial_guess = np.concatenate([initial_guess_A, initial_guess_W, initial_guess_J])
+    bounds = (bounds_lower, bounds_upper)
+
+    # Perform the optimization
+    t_points = batch_x.delay
+    z_points = np.concatenate(data)
+    result = least_squares(residuals, initial_guess, bounds=bounds, args=(t_points, z_points), loss='soft_l1')
+
+    params = result.x
+    guessed_decay = params[:n]
+    guessed_W = params[n:2*n]
+    guessed_J = params[2*n:3*n-1]
+
+    return guessed_decay, guessed_W, guessed_J
 def percent_error(correct, fitted):
     mse = np.mean((correct - fitted) ** 2)
     return np.sqrt(mse) / np.mean(np.abs(correct)) * 100
