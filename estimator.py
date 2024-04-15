@@ -225,7 +225,7 @@ def full_complex_fit_modified(batch_x, batch_y, neighbors=0, W_given=None, J_giv
     return guessed_decay, guessed_W, guessed_J
 def percent_error(correct, fitted):
     mse = np.mean((correct - fitted) ** 2)
-    return np.sqrt(mse) / np.mean(np.abs(correct)) * 100
+    return np.sqrt(mse) / np.mean(np.abs(correct))
 
 
 def calc_dist(fitted_values, correct_values):
