@@ -8,12 +8,12 @@ from qiskit import QuantumCircuit, Aer
 from scipy.linalg import expm
 from scipy.optimize import curve_fit, minimize
 
-# Loading your IBM Quantum account(s)
-service = QiskitRuntimeService(
-    channel='ibm_quantum',
-    instance='ibm-q/open/main',
-    token='4cb4dd43af6af16cc340156cf1dfebb32ec9f233cec56a0c6e98e9a574f99d96c7a4867d4541dc9394c58f81efe019ee4feb8fa17b475f79952b0f66bf000f4c'
-)
+# # Loading your IBM Quantum account(s)
+# service = QiskitRuntimeService(
+#     channel='ibm_quantum',
+#     instance='ibm-q/open/main',
+#     token='4cb4dd43af6af16cc340156cf1dfebb32ec9f233cec56a0c6e98e9a574f99d96c7a4867d4541dc9394c58f81efe019ee4feb8fa17b475f79952b0f66bf000f4c'
+# )
 
 h = lambda n, J, z: sum([J[i] * 0.25 * (z[i] - 1) * (z[(i + 1)] - 1) for i in range(n - 1)])
 

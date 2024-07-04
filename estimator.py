@@ -85,6 +85,12 @@ def one_by_one_X(batch_x_detuning, batch_x_crosstalk):
     crosstalk_qubits_measured = batch_x_crosstalk.qubits_measured
     params = fit_X(batch_x_crosstalk)
     J = [params[i][1] - W[crosstalk_qubits_measured[i]] for i in range(n - 1)]
+
+    J = np.abs(J)
+    decay = np.abs(decay)
+    W = np.abs(W)
+
+
     return decay, W, J
 
 
