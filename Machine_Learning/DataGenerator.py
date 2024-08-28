@@ -13,6 +13,7 @@ import numpy as np
 import Ramsey_ExperimentV2
 import estimator
 
+# import ramsey_experiment
 
 # total_experiments = 1
 total_time = 0.5 * np.pi
@@ -36,7 +37,7 @@ def run_experiment(position, qubits, total_experiments, total_time_stamps, shots
     time_stamps = np.delete(time_stamps, 0)
     time_stamps = [0.5]
 
-    def create_csv_from_experiments(experiments, decay, W, J, guessed_decay, guessed_W, guessed_J, filename):
+    def create_csv_from_experiments(experiments, decay, W, J, filename):
         # Open the file in write mode
         filename = filename + ".csv"
         with open(filename, mode='w', newline='', encoding='utf-8') as file:
@@ -61,13 +62,6 @@ def run_experiment(position, qubits, total_experiments, total_time_stamps, shots
             for i in range(len(J[0])):
                 header.append(f'J_{i}')
 
-            for i in range(len(guessed_decay[0])):
-                header.append(f'guessed_decay_{i}')
-            for i in range(len(guessed_W[0])):
-                header.append(f'guessed_W_{i}')
-            for i in range(len(guessed_J[0])):
-                header.append(f'guessed_J_{i}')
-
             csv_writer.writerow(header)
 
             # Write each experiment's data
@@ -82,20 +76,11 @@ def run_experiment(position, qubits, total_experiments, total_time_stamps, shots
                     row.append(k)
                 for k in J[j]:
                     row.append(k)
-                for k in guessed_decay[j]:
-                    row.append(k)
-                for k in guessed_W[j]:
-                    row.append(k)
-                for k in guessed_J[j]:
-                    row.append(k)
                 csv_writer.writerow(row)
 
     W_parameters = []
     J_parameters = []
     decay_parameters = []
-    guessed_W_parameters = []
-    guessed_J_parameters = []
-    guessed_decay_parameters = []
     with tqdm(total=total_experiments, file=sys.stdout, dynamic_ncols=True, position=position,
               desc=f'Experiments for {filename}') as pbar:
         for i in range(total_experiments):
@@ -103,28 +88,36 @@ def run_experiment(position, qubits, total_experiments, total_time_stamps, shots
             L = [random.gauss(mean_decay, 0.2) for _ in range(qubits)]
             W = [random.gauss(mean_w, std) for _ in range(qubits)]
             J = [random.gauss(mean_j, std) for _ in range(qubits - 1)]
+            time = [0.4]
+
             W_parameters.append(W)
             J_parameters.append(J)
             decay_parameters.append(L)
-            batch_x, batch_y = Ramsey_ExperimentV2.ramsey_global(qubits, shots, time_stamps, L, W, J)
-            exp_x = [batch_x.RamseyExperiments[i] for i in range(len(time_stamps))]
-            exp_y = [batch_y.RamseyExperiments[i] for i in range(len(time_stamps))]
+            # batch_x, batch_y = Ramsey_ExperimentV2.ramsey_global(qubits, shots, time_stamps, L, W, J)
+            # exp_x = [batch_x.RamseyExperiments[i] for i in range(len(time_stamps))]
+            # exp_y = [batch_y.RamseyExperiments[i] for i in range(len(time_stamps))]
 
-            values_x = [exp.get_n_nearest_neighbors(correlations) for exp in exp_x][0]
-            values_y = [exp.get_n_nearest_neighbors(correlations) for exp in exp_y][0]
-            values_x.extend(values_x)
-            values_y.extend(values_y)
+            batch_x_det, batch_y_det, batch_x_cross, batch_y_cross = Ramsey_ExperimentV2.ramsey_local(qubits, shots,
+                                                                                                      time, L, W, J)
+
+            values_x_det = [exp.get_n_nearest_neighbors(correlations) for exp in batch_x_det][0]
+            values_y_det = [exp.get_n_nearest_neighbors(correlations) for exp in batch_y_det][0]
+            values_x_cross = [exp.get_n_nearest_neighbors(correlations) for exp in batch_x_det][0]
+            values_y_cross = [exp.get_n_nearest_neighbors(correlations) for exp in batch_y_det][0]
+
+            values_x = []
+            values_y = []
+
+            values_x.extend(values_x_det)
+            values_x.extend(values_x_cross)
+            values_y.extend(values_y_det)
+            values_y.extend(values_y_cross)
 
             experiments_x.append(values_x)
             experiments_y.append(values_y)
 
-            guessed_d, guessed_w, guessed_j = estimator.full_complex_fit(batch_x, batch_y, neighbors=2)
-            guessed_decay_parameters.append(guessed_d.tolist())
-            guessed_W_parameters.append(guessed_w.tolist())
-            guessed_J_parameters.append(guessed_j.tolist())
             pbar.update(1)
     create_csv_from_experiments((experiments_x, experiments_y), decay_parameters, W_parameters, J_parameters,
-                                guessed_decay_parameters, guessed_W_parameters, guessed_J_parameters,
                                 filename)
 
 
