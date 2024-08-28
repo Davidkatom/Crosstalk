@@ -1,19 +1,22 @@
 import random
-from scipy import signal
 import numpy as np
-from qiskit_ibm_runtime import QiskitRuntimeService
-from qiskit import QuantumRegister, ClassicalRegister, execute
 import qiskit.quantum_info as qi
-from qiskit import QuantumCircuit, Aer
+from qiskit import QuantumCircuit
+from qiskit import QuantumRegister, ClassicalRegister
+from qiskit.primitives import BackendSampler
+from qiskit_aer import Aer, AerSimulator
+from qiskit_ibm_runtime import QiskitRuntimeService
+from scipy import signal
 from scipy.linalg import expm
 from scipy.optimize import curve_fit, minimize
+from qiskit import transpile
 
-# # Loading your IBM Quantum account(s)
-# service = QiskitRuntimeService(
-#     channel='ibm_quantum',
-#     instance='ibm-q/open/main',
-#     token='4cb4dd43af6af16cc340156cf1dfebb32ec9f233cec56a0c6e98e9a574f99d96c7a4867d4541dc9394c58f81efe019ee4feb8fa17b475f79952b0f66bf000f4c'
-# )
+# Loading your IBM Quantum account(s)
+service = QiskitRuntimeService(
+    channel='ibm_quantum',
+    instance='ibm-q/open/main',
+    token='dd810d4274a18946b6783e5557a9e2a912c07a2dd722153fd10e5dd5fa7512521eb33cad123947c69ff02debf01e4615b67460fbb51fd94cb2f2b6153d5401d9'
+)
 
 h = lambda n, J, z: sum([J[i] * 0.25 * (z[i] - 1) * (z[(i + 1)] - 1) for i in range(n - 1)])
 
@@ -230,15 +233,10 @@ class RamseyExperiment:
         self.z = self._get_z_exp()
 
     def _run(self):
-        # service = QiskitRuntimeService()
-        # backend = service.backend("ibm_osaka")
-        # noise_model = NoiseModel.from_backend(backend)
-
-        # circ_tnoise = passmanager.run(self.circuit)
-        # job = sim_noise.run(circ_tnoise)
-
-        job = execute(self.circuit, Aer.get_backend("qasm_simulator"), shots=self.shots)
-        # self.raw_data = job.result().get_memory()
+        aer_sim = AerSimulator()
+        backend = aer_sim
+        new_circuit = transpile(self.circuit, backend)
+        job = backend.run(new_circuit, shots=self.shots)
         self.raw_data = self.get_raw_from_counts(job.result().get_counts())
         return job.result()
 
