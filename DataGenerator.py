@@ -102,8 +102,8 @@ def run_experiment(position, qubits, total_experiments, total_time_stamps, shots
 
             values_x_det = [exp.get_n_nearest_neighbors(correlations) for exp in batch_x_det.RamseyExperiments][0]
             values_y_det = [exp.get_n_nearest_neighbors(correlations) for exp in batch_y_det.RamseyExperiments][0]
-            values_x_cross = [exp.get_n_nearest_neighbors(correlations) for exp in batch_x_det.RamseyExperiments][0]
-            values_y_cross = [exp.get_n_nearest_neighbors(correlations) for exp in batch_y_det.RamseyExperiments][0]
+            values_x_cross = [exp.get_n_nearest_neighbors(correlations) for exp in batch_x_cross.RamseyExperiments][0]
+            values_y_cross = [exp.get_n_nearest_neighbors(correlations) for exp in batch_y_cross.RamseyExperiments][0]
 
             values_x = []
             values_y = []
