@@ -2,6 +2,7 @@
 import tensorflow as tf
 import numpy as np
 
+
 class CustomConnectedLayer(tf.keras.layers.Layer):
     def __init__(self, units, num_groups, activation=None, **kwargs):
         """
@@ -86,6 +87,59 @@ class CustomConnectedLayer2(tf.keras.layers.Layer):
         masked_kernel = self.kernel * self.mask
         return tf.matmul(inputs, masked_kernel) + self.bias
 
+
+class TrigonometricLayer(tf.keras.layers.Layer):
+    def __init__(self, t, num_measurements, **kwargs):
+        super(TrigonometricLayer, self).__init__(**kwargs)
+        self.t = t  # Time at which measurements are taken
+        self.num_measurements = num_measurements  # Number of measurement functions
+
+    def build(self, input_shape):
+        # Initialize trainable parameters
+
+        self.trig_weights = self.add_weight(
+            name='trig_weights',
+            shape=(20, 8),
+            initializer=tf.random_uniform_initializer(minval=0.0, maxval=1.0),
+            trainable=True
+        )
+
+        super(TrigonometricLayer, self).build(input_shape)
+
+    def call(self, inputs):
+        # Compute each measurement function based on trainable parameters
+        w0, w1, j, a1, a2 = inputs[:, 0], inputs[:, 1], inputs[:, 2], inputs[:, 3], inputs[:, 4]
+
+        x1 = tf.cos(w0 * self.t) * tf.exp(- a1 * self.t)
+        x2 = tf.cos(w1 * self.t) * tf.exp(- a1 * self.t)
+        x3 = tf.cos(j * self.t) * tf.exp(- a1 * self.t)
+        x4 = tf.sin(w0 * self.t) * tf.exp(- a1 * self.t)
+        x5 = tf.sin(w1 * self.t) * tf.exp(- a1 * self.t)
+        x6 = tf.sin(j * self.t) * tf.exp(- a1 * self.t)
+        x7 = tf.cos((w0 + w1) * self.t) * tf.exp(- a1 * self.t)
+        x8 = tf.cos((w0 + j) * self.t) * tf.exp(- a1 * self.t)
+        x9 = tf.cos((w1 + j) * self.t) * tf.exp(- a1 * self.t)
+        x10 = tf.cos((w1 + j + w0) * self.t) * tf.exp(- a1 * self.t)
+
+        x11 = tf.cos(w0 * self.t) * tf.exp(- a2 * self.t)
+        x12 = tf.cos(w1 * self.t) * tf.exp(- a2 * self.t)
+        x13 = tf.cos(j * self.t) * tf.exp(- a2 * self.t)
+        x14 = tf.sin(w0 * self.t) * tf.exp(- a2 * self.t)
+        x15 = tf.sin(w1 * self.t) * tf.exp(- a2 * self.t)
+        x16 = tf.sin(j * self.t) * tf.exp(- a2 * self.t)
+        x17 = tf.cos((w0 + w1) * self.t) * tf.exp(- a2 * self.t)
+        x18 = tf.cos((w0 + j) * self.t) * tf.exp(- a2 * self.t)
+        x19 = tf.cos((w1 + j) * self.t) * tf.exp(- a2 * self.t)
+        x20 = tf.cos((w1 + j + w0) * self.t) * tf.exp(- a2 * self.t)
+
+        trig_combinations = tf.stack([
+            x1, x2, x3, x4, x5, x6, x7, x8, x9, x10,
+            x11, x12, x13, x14, x15, x16, x17, x18, x19, x20
+        ], axis=-1)
+
+        outputs = tf.matmul(trig_combinations, self.trig_weights)  # Shape: (1, num_features)
+
+        return outputs
 
 
 # Dummy input for visualization

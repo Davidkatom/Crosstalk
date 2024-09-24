@@ -111,7 +111,7 @@ def GHZ(n):
     return (1 / sqrt(2)) * (zero_state(n) + one_state(n))
 
 
-def expectation_value(state, pauli_string):
+def expectation_value(state, pauli_string, decay=False):
     n = np.log2(len(state)).astype(int)
     a = symbols(f'a0:{n}', real=True)
     t = symbols('t', real=True)
@@ -120,7 +120,8 @@ def expectation_value(state, pauli_string):
     for i in range(len(pauli_string)):
         if pauli_string[i] == 'I':
             continue
-        decay_factor *= exp(-a[i] * t)
+        if decay:
+            decay_factor *= exp(-a[i] * t)
     return simplify(expand_complex(decay_factor * (Dagger(state) * operator * state)))[0]
 
 
