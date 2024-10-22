@@ -96,7 +96,13 @@ def run_experiment(position, qubits, total_experiments, total_time_stamps, shots
               desc=f'Experiments for {filename}') as pbar:
         for i in range(total_experiments):
             experiment_parts = []
-            L = [random.gauss(mean_decay, mean_decay / 3) for _ in range(qubits)]
+            L = [] #make sure L is positive
+            for _ in range(qubits):
+                val = -1
+                while val <= 0:  # Keep generating until val is positive
+                    val = random.gauss(mean_decay, mean_decay / 3)
+                L.append(val)
+
             W = [random.gauss(mean_w, std) for _ in range(qubits)]
             J = [random.gauss(mean_j, std) for _ in range(qubits - 1)]
             time = [0.8]
