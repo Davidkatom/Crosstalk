@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from qutip import *
 from qutip_qip.operations import hadamard_transform, snot, phasegate
+from qutip.solver.integrator import IntegratorException
 
 
 class Ramsey_batch:
@@ -294,7 +295,19 @@ def ramsey_local(n, total_shots, delay, W, J, Gamma_1, Gamma_2, Gamma_phi):
         delay = np.insert(delay, 0, 0.0)
         modif_delay = True
 
-    evolved_det0 = mesolve(H, state_det_0, delay, c_o, [])
+    # evolved_det0 = mesolve(H, state_det_0, delay, c_o, [])
+
+
+    try:
+        evolved_det0 = mesolve(H, state_det_0, delay, c_o, [])
+    except IntegratorException as e:
+        print("IntegratorException occurred!")
+        print("Error details:", e)
+        print("Hamiltonian (H):", H)
+        print("Initial State (state_det_0):", state_det_0)
+        print("Time Delay (delay):", delay)
+        print("Collapse Operators (c_o):", c_o)
+
     evolved_det1 = mesolve(H, state_det_1, delay, c_o, [])
     evolved_cross0 = mesolve(H, state_cross_0, delay, c_o, [])
     evolved_cross1 = mesolve(H, state_cross_1, delay, c_o, [])
