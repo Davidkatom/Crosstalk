@@ -11,6 +11,7 @@ import pandas as pd
 import numpy as np
 
 import Ramsey_ExperimentV2
+import Ramsey_ExperimentV3
 import estimator
 
 # import ramsey_experiment
@@ -28,7 +29,7 @@ total_time = 0.5 * np.pi
 
 
 def run_experiment(position, qubits, total_experiments, total_time_stamps, shots, mean_decay, mean_w, mean_j, std,
-                   correlations,
+                   correlations, Gamma_1, Gamma_2,
                    filename='experiments.csv'):
     experiments_x = []
     experiments_y = []
@@ -37,12 +38,14 @@ def run_experiment(position, qubits, total_experiments, total_time_stamps, shots
     time_stamps = np.delete(time_stamps, 0)
     time_stamps = [0.5]
 
-    def create_csv_from_experiments(experiments, decay, W, J, filename):
+    def create_csv_from_experiments(experiments, decay, W, J, filename, Gamma_1, Gamma_2):
         # Open the file in write mode
         filename = filename + ".csv"
         with open(filename, mode='w', newline='', encoding='utf-8') as file:
             # Create a CSV writer
             csv_writer = csv.writer(file)
+            Gamma_1_list = [Gamma_1 for _ in range(qubits)]
+            Gamma_2_list = [Gamma_2 for _ in range(qubits)]
 
             # Prepare the header
             header = []
@@ -61,6 +64,10 @@ def run_experiment(position, qubits, total_experiments, total_time_stamps, shots
                 header.append(f'W_{i}')
             for i in range(len(J[0])):
                 header.append(f'J_{i}')
+            for i in range(len(Gamma_1_list)):
+                header.append(f'Gamma_1_{i}')
+            for i in range(len(Gamma_2_list)):
+                header.append(f'Gamma_2_{i}')
 
             csv_writer.writerow(header)
 
@@ -76,6 +83,10 @@ def run_experiment(position, qubits, total_experiments, total_time_stamps, shots
                     row.append(k)
                 for k in J[j]:
                     row.append(k)
+                for k in Gamma_1_list:
+                    row.append(k)
+                for k in Gamma_2_list:
+                    row.append(k)
                 csv_writer.writerow(row)
 
     W_parameters = []
@@ -85,7 +96,7 @@ def run_experiment(position, qubits, total_experiments, total_time_stamps, shots
               desc=f'Experiments for {filename}') as pbar:
         for i in range(total_experiments):
             experiment_parts = []
-            L = [random.gauss(mean_decay, mean_decay/3) for _ in range(qubits)]
+            L = [random.gauss(mean_decay, mean_decay / 3) for _ in range(qubits)]
             W = [random.gauss(mean_w, std) for _ in range(qubits)]
             J = [random.gauss(mean_j, std) for _ in range(qubits - 1)]
             time = [0.8]
@@ -96,14 +107,28 @@ def run_experiment(position, qubits, total_experiments, total_time_stamps, shots
             # batch_x, batch_y = Ramsey_ExperimentV2.ramsey_global(qubits, shots, time_stamps, L, W, J)
             # exp_x = [batch_x.RamseyExperiments[i] for i in range(len(time_stamps))]
             # exp_y = [batch_y.RamseyExperiments[i] for i in range(len(time_stamps))]
+            J_dict = {}
+            for i in range(qubits - 1):  # Only connect to the next neighbor
+                J_dict[(i, i + 1)] = J[i]
 
-            batch_x_det, batch_y_det, batch_x_cross, batch_y_cross = Ramsey_ExperimentV2.ramsey_local(qubits, shots,
-                                                                                                      time, L, W, J)
+            Gamma_1_list = [Gamma_1 for _ in range(qubits)]
+            Gamma_2_list = [Gamma_2 for _ in range(qubits)]
 
-            values_x_det = [exp.get_n_nearest_neighbors(correlations) for exp in batch_x_det.RamseyExperiments][0]
-            values_y_det = [exp.get_n_nearest_neighbors(correlations) for exp in batch_y_det.RamseyExperiments][0]
-            values_x_cross = [exp.get_n_nearest_neighbors(correlations) for exp in batch_x_cross.RamseyExperiments][0]
-            values_y_cross = [exp.get_n_nearest_neighbors(correlations) for exp in batch_y_cross.RamseyExperiments][0]
+            batch_x_det, batch_y_det, batch_x_cross, batch_y_cross = Ramsey_ExperimentV3.ramsey_local(qubits, shots,
+                                                                                                      time, W, J_dict,
+                                                                                                      Gamma_1_list,
+                                                                                                      Gamma_2_list, L)
+
+            # values_x_det = [exp.get_n_nearest_neighbors(correlations) for exp in batch_x_det.RamseyExperiments][0]
+            # values_y_det = [exp.get_n_nearest_neighbors(correlations) for exp in batch_y_det.RamseyExperiments][0]
+            # values_x_cross = [exp.get_n_nearest_neighbors(correlations) for exp in batch_x_cross.RamseyExperiments][0]
+            # values_y_cross = [exp.get_n_nearest_neighbors(correlations) for exp in batch_y_cross.RamseyExperiments][0]
+
+            values_x_det = np.concatenate(np.transpose(batch_x_det.zi).tolist())
+            values_y_det = np.concatenate(np.transpose(batch_y_det.zi).tolist())
+            values_x_cross = np.concatenate(np.transpose(batch_x_cross.zi).tolist())
+            values_y_cross = np.concatenate(np.transpose(batch_y_cross.zi).tolist())
+
 
             values_x = []
             values_y = []
@@ -118,7 +143,7 @@ def run_experiment(position, qubits, total_experiments, total_time_stamps, shots
 
             pbar.update(1)
     create_csv_from_experiments((experiments_x, experiments_y), decay_parameters, W_parameters, J_parameters,
-                                filename)
+                                filename, Gamma_1, Gamma_2)
 
 
 # run_experiment(number_of_qubits, time_stamps, shots, total_experiments, filename=file_name)
@@ -165,6 +190,8 @@ def main():
             variables["Mean_W"][i],
             variables["Mean_J"][i],
             variables["Std"][i],
+            variables["Gamma_1"][i],
+            variables["Gamma_2"][i],
             variables["Correlations"][i],
             directory_name_current_datetime_with_minutes + "/" + variables["File_Name"][i]
         )
