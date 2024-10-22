@@ -307,6 +307,9 @@ def ramsey_local(n, total_shots, delay, W, J, Gamma_1, Gamma_2, Gamma_phi):
         print("Initial State (state_det_0):", state_det_0)
         print("Time Delay (delay):", delay)
         print("Collapse Operators (c_o):", c_o)
+        print("W = ", W)
+        print("J = ", J)
+        print("L = ", Gamma_phi)
 
     evolved_det1 = mesolve(H, state_det_1, delay, c_o, [])
     evolved_cross0 = mesolve(H, state_cross_0, delay, c_o, [])
