@@ -13,16 +13,14 @@ pd.options.display.float_format = "{:.6f}".format
 qubits = 2
 # date = "2024-09-05_18-52"
 # name = "Qubits_2_Lines_10000_TS_2_Shots_10000_MeanDecay_0.75_MeanW_0_MeanJ_0_Std_1_Correlations_0_7.csv"
-location = "C:\Projects\Crosstalk\Machine_Learning\Data/final/3qubits-many experiments-TODO/"
-
+location = "C:\Projects\Crosstalk\Machine_Learning\Data/final/largeT1/"
 
 
 def compare(location):
     # train_df = ML_Crosstalk.load_training_data(location)
     # test_df = ML_Crosstalk.load_test_data(location)
     data = pd.read_csv(location)
-    train_df, test_df = ML_Crosstalk.split_data(data, 0.1)
-
+    train_df, test_df = ML_Crosstalk.split_data(data, 0.05)
 
     train_df.head()
     print(len(train_df))
@@ -30,8 +28,8 @@ def compare(location):
     from tensorflow.python.keras.regularizers import L2, L1
 
     learning_rate = 0.0001
-    epochs = 1000
-    batch_size = 100
+    epochs = 700
+    batch_size = 1000
 
     # Get all column names as a list
     input_keys, output_keys = ML_Crosstalk.get_keys(train_df, qubits)
@@ -47,7 +45,6 @@ def compare(location):
     test_features = {key: test_df[key] for key in inputs}
     test_labels = test_df[output_keys]
 
-
     nodes_per_layer = [32, 64, 64, 64, 64, 64, 64, 64, 8]  # Optional, can be None
     output = ML_Crosstalk.build_model(concatenated_inputs, len(nodes_per_layer), output_keys, nodes_per_layer)
 
@@ -55,7 +52,6 @@ def compare(location):
     optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
     model.compile(optimizer=optimizer, loss='mean_absolute_error')
     model.summary()
-
 
     # Train the model
     # history = model.fit(train_features, train_labels, validation_data=(validation_features, validation_labels), epochs=epochs, batch_size=batch_size);
@@ -70,29 +66,33 @@ def compare(location):
     new_data = test_df
 
     error = []
-    for i in range(len(new_data)):
+    sample_size = 100
+    for i in range(sample_size):
         line = new_data.iloc[i]
 
         # correct_output = line[['decay_0', 'decay_1', 'W_0', 'W_1', "J_0"]].array
         correct_output = line[
-           ML_Crosstalk.get_output_keys(qubits)].array
+            ML_Crosstalk.get_output_keys(qubits)].array
 
         input_data = {key: np.array([line[key]]) for key in inputs}
         predictions = model.predict(input_data)
         error.append(estimator.percent_error(predictions[0], correct_output))
 
-    print("The mean percent error is: ", np.mean(error) * 100)
-    return np.mean(error) * 100
+    print("The mean percent error is: ", np.median(error) * 100)
+    print("The std percent error is: ", np.std(error) * 100)
+    return np.median(error) * 100, np.std(error) * 100
 
 
-#for each file in the directory
+# for each file in the directory
 errors = []
+stds = []
 for filename in os.listdir(location):
     if filename.endswith(".csv"):
         # print(filename)
-        #compare the file
-        error = compare(location + filename)
+        # compare the file
+        error, std = compare(location + filename)
         errors.append((filename, error))
+        errors.append(std)
 
 for error in errors:
     print(error)

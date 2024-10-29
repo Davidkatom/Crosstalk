@@ -45,12 +45,17 @@ def ramsey_H(N, W, J):
     identity = tensor([qeye(2) for _ in range(N)])
     for i in range(N):
         Z_i = tensor([sigmaz() if n == i else qeye(2) for n in range(N)])
+        X_i = tensor([sigmax() if n == i else qeye(2) for n in range(N)])
         H -= 0.5 * W[i] * (Z_i - identity)
 
     for (i, j), J_ij in J.items():
         Z_i = tensor([sigmaz() if n == i else qeye(2) for n in range(N)])
         Z_j = tensor([sigmaz() if n == j else qeye(2) for n in range(N)])
+
+        X_i = tensor([sigmax() if n == i else qeye(2) for n in range(N)])
+        X_j = tensor([sigmax() if n == j else qeye(2) for n in range(N)])
         H += (1 / 4) * J_ij * (Z_i - identity) * (Z_j - identity)
+        # H += (1 / 4) * J_ij * (X_i - identity) * (X_j - identity)
     return H
 
 

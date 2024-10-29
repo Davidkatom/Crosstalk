@@ -29,7 +29,7 @@ total_time = 0.5 * np.pi
 
 
 def run_experiment(position, qubits, total_experiments, total_time_stamps, shots, mean_decay, mean_w, mean_j, std,
-                   correlations, Gamma_1, Gamma_2,
+                   Gamma_1, Gamma_2, correlations,
                    filename='experiments.csv'):
     experiments_x = []
     experiments_y = []
@@ -96,7 +96,7 @@ def run_experiment(position, qubits, total_experiments, total_time_stamps, shots
               desc=f'Experiments for {filename}') as pbar:
         for i in range(total_experiments):
             experiment_parts = []
-            L = [] #make sure L is positive
+            L = []  # make sure L is positive
             for _ in range(qubits):
                 val = -1
                 while val <= 0:  # Keep generating until val is positive
@@ -134,7 +134,6 @@ def run_experiment(position, qubits, total_experiments, total_time_stamps, shots
             values_y_det = np.concatenate(np.transpose(batch_y_det.zi).tolist())
             values_x_cross = np.concatenate(np.transpose(batch_x_cross.zi).tolist())
             values_y_cross = np.concatenate(np.transpose(batch_y_cross.zi).tolist())
-
 
             values_x = []
             values_y = []
