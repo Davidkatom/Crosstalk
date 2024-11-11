@@ -233,92 +233,31 @@ def sample_state(states, shots: int, measurement: str):
     return Counts
 
 
-def ramsey_local(n, total_shots, delay, W, J, Gamma_1, Gamma_2, Gamma_phi):
+def ramsey_local(n, total_shots, delay, Gamma_phi, W, J, Gamma_1=None, Gamma_2=None):
     Gamma_phi = np.array(Gamma_phi) / 2  # TODO this is for testing (gamma_phi = 2 decay rate)
-    state_det_0_string = ""
-    state_det_1_string = ""
-    state_cross_0_string = ["0"] * (2 * n)
-    state_cross_1_string = ["0"] * (2 * n)
-
-    measurements_det_0 = []
-    measurements_det_1 = []
-    measurements_cross_0 = []
-    measurements_cross_1 = []
-
     total_shots = int(total_shots / len(delay))
     total_shots = int(total_shots / 8)
 
-    # Create initial states
-    for i in range(n):
-        if i % 2 == 0:
-            state_det_0_string += "+"
-            measurements_det_0.append(i)
-            state_det_1_string += "0"
-        else:
-            state_det_0_string += "0"
-            state_det_1_string += "+"
-            measurements_det_1.append(i)
+    state_det_0_string, state_det_1_string = create_detuning_states(n)
+    state_cross_0_string, state_cross_1_string = create_crosstalk_states(n)
 
-    for i in range(n):
-        if (i - 1) % 4 == 0:
-            state_cross_0_string[i - 1] = "+"
-            state_cross_0_string[i] = "1"
-            state_cross_0_string[i + 1] = "+"
-        if (i - 3) % 4 == 0:
-            state_cross_1_string[i - 1] = "+"
-            state_cross_1_string[i] = "1"
-            state_cross_1_string[i + 1] = "+"
-    state_cross_0_string = state_cross_0_string[:n]
-    state_cross_1_string = state_cross_1_string[:n]
-
-    for i in range(n - 1):
-        if state_cross_0_string[i + 1] == "+" and state_cross_0_string[i] == "+":
-            state_cross_0_string[i + 1] = "0"
-        if state_cross_1_string[i + 1] == "+" and state_cross_1_string[i] == "+":
-            state_cross_1_string[i + 1] = "0"
-
-    for i in range(n):
-        if state_cross_0_string[i] == "+":
-            measurements_cross_0.append(i)
-        if state_cross_1_string[i] == "+":
-            measurements_cross_1.append(i)
-
-    state_cross_0_string = "".join(state_cross_0_string)
-    state_cross_1_string = "".join(state_cross_1_string)
 
     # Evolve the states
     H = ramsey_H(n, W, J)
+    if Gamma_1 is None:
+        Gamma_1 = [0] * n
+        Gamma_2 = [0] * n
     c_o = c_ops(Gamma_1, Gamma_2, Gamma_phi, n)
-
-    state_det_0 = create_state(state_det_0_string)
-    state_det_1 = create_state(state_det_1_string)
-    state_cross_0 = create_state(state_cross_0_string)
-    state_cross_1 = create_state(state_cross_1_string)
 
     modif_delay = False
     if delay[0] != 0:
         delay = np.insert(delay, 0, 0.0)
         modif_delay = True
 
-    # evolved_det0 = mesolve(H, state_det_0, delay, c_o, [])
-
-
-    try:
-        evolved_det0 = mesolve(H, state_det_0, delay, c_o, [])
-    except IntegratorException as e:
-        print("IntegratorException occurred!")
-        print("Error details:", e)
-        print("Hamiltonian (H):", H)
-        print("Initial State (state_det_0):", state_det_0)
-        print("Time Delay (delay):", delay)
-        print("Collapse Operators (c_o):", c_o)
-        print("W = ", W)
-        print("J = ", J)
-        print("L = ", Gamma_phi)
-
-    evolved_det1 = mesolve(H, state_det_1, delay, c_o, [])
-    evolved_cross0 = mesolve(H, state_cross_0, delay, c_o, [])
-    evolved_cross1 = mesolve(H, state_cross_1, delay, c_o, [])
+    evolved_det0 = mesolve(H, create_state(state_det_0_string), delay, c_o, [])
+    evolved_det1 = mesolve(H, create_state(state_det_1_string), delay, c_o, [])
+    evolved_cross0 = mesolve(H, create_state(state_cross_0_string), delay, c_o, [])
+    evolved_cross1 = mesolve(H, create_state(state_cross_1_string), delay, c_o, [])
 
     if modif_delay:
         delay = delay[1:]
@@ -388,57 +327,253 @@ def ramsey_local(n, total_shots, delay, W, J, Gamma_1, Gamma_2, Gamma_phi):
         expectation_cross_x.append(snapshot_x)
         expectation_cross_y.append(snapshot_y)
 
-    batch_x_det, batch_y_det, batch_x_cross, batch_y_cross = Ramsey_batch(), Ramsey_batch(), Ramsey_batch(), Ramsey_batch()
-    batch_x_det.n = n
-    batch_y_det.n = n
-    batch_x_cross.n = n
-    batch_y_cross.n = n
+    expectations = [expectation_det_x, expectation_det_y, expectation_cross_x, expectation_cross_y]
+    return package_data(expectations, n, total_shots, delay, W, J, Gamma_1, Gamma_2, Gamma_phi, measured_qubits)
 
-    batch_x_det.total_shots = total_shots
-    batch_y_det.total_shots = total_shots
-    batch_x_cross.total_shots = total_shots
-    batch_y_cross.total_shots = total_shots
 
-    batch_x_det.delay = delay
-    batch_y_det.delay = delay
-    batch_x_cross.delay = delay
-    batch_y_cross.delay = delay
+def ramsey_local_X(n, total_shots, delay, Gamma_phi, W, J, Gamma_1=None, Gamma_2=None):
+    Gamma_phi = np.array(Gamma_phi) / 2  # TODO this is for testing (gamma_phi = 2 decay rate)
+    total_shots = int(total_shots / len(delay))
+    total_shots = int(total_shots / 4)
 
-    batch_x_det.W = W
-    batch_y_det.W = W
-    batch_x_cross.W = W
-    batch_y_cross.W = W
+    state_det_0_string, state_det_1_string = create_detuning_states(n)
+    state_cross_0_string, state_cross_1_string = create_crosstalk_states(n)
 
-    J_list = J.items()
 
-    batch_x_det.J = J_list
-    batch_y_det.J = J_list
-    batch_x_cross.J = J_list
-    batch_y_cross.J = J_list
+    # Evolve the states
+    H = ramsey_H(n, W, J)
+    if Gamma_1 is None:
+        Gamma_1 = [0] * n
+        Gamma_2 = [0] * n
+    c_o = c_ops(Gamma_1, Gamma_2, Gamma_phi, n)
 
-    batch_x_det.Gamma_1 = Gamma_1
-    batch_y_det.Gamma_1 = Gamma_1
-    batch_x_cross.Gamma_1 = Gamma_1
-    batch_y_cross.Gamma_1 = Gamma_1
+    modif_delay = False
+    if delay[0] != 0:
+        delay = np.insert(delay, 0, 0.0)
+        modif_delay = True
 
-    batch_x_det.Gamma_2 = Gamma_2
-    batch_y_det.Gamma_2 = Gamma_2
-    batch_x_cross.Gamma_2 = Gamma_2
-    batch_y_cross.Gamma_2 = Gamma_2
+    evolved_det0 = mesolve(H, create_state(state_det_0_string), delay, c_o, [])
+    evolved_det1 = mesolve(H, create_state(state_det_1_string), delay, c_o, [])
+    evolved_cross0 = mesolve(H, create_state(state_cross_0_string), delay, c_o, [])
+    evolved_cross1 = mesolve(H, create_state(state_cross_1_string), delay, c_o, [])
 
-    batch_x_det.Gamma_phi = Gamma_phi
-    batch_y_det.Gamma_phi = Gamma_phi
-    batch_x_cross.Gamma_phi = Gamma_phi
-    batch_y_cross.Gamma_phi = Gamma_phi
+    if modif_delay:
+        delay = delay[1:]
+        evolved_det0.states = evolved_det0.states[1:]
+        evolved_det1.states = evolved_det1.states[1:]
+        evolved_cross0.states = evolved_cross0.states[1:]
+        evolved_cross1.states = evolved_cross1.states[1:]
 
-    batch_x_det.zi = expectation_det_x
-    batch_y_det.zi = expectation_det_y
-    batch_x_cross.zi = expectation_cross_x
-    batch_y_cross.zi = expectation_cross_y
+    # Sample the states
+    measurements_det_x_0 = sample_state(evolved_det0.states, total_shots, "X" * n)
+    measurements_det_x_1 = sample_state(evolved_det1.states, total_shots, "X" * n)
+    measurements_cross_x_0 = sample_state(evolved_cross0.states, total_shots, "X" * n)
+    measurements_cross_x_1 = sample_state(evolved_cross1.states, total_shots, "X" * n)
 
-    batch_x_det.qubits_measured = measured_qubits
-    batch_y_det.qubits_measured = measured_qubits
-    batch_x_cross.qubits_measured = measured_qubits
-    batch_y_cross.qubits_measured = measured_qubits
+    # Calculate the expectation values
+    expectation_det_x = []
+    expectation_cross_x = []
+    # Detuning
+    for i in range(len(delay)):
+        snapshot_x = []
+        for j in range(n):
+            pauli_X = j * "I" + "X" + (n - j - 1) * "I"
+            if j % 2 == 0:
+                snapshot_x.append(calculate_expectation(measurements_det_x_0[i], pauli_X))
+            else:
+                snapshot_x.append(calculate_expectation(measurements_det_x_1[i], pauli_X))
+        expectation_det_x.append(snapshot_x)
 
-    return batch_x_det, batch_y_det, batch_x_cross, batch_y_cross
+    # Crosstalk
+    measured_qubits = [0] * n
+    for i in range(len(delay)):
+        snapshot_x = [0] * n
+        for j in range(0, n):
+            pauli_X = j * "I" + "X" + (n - j - 1) * "I"
+
+            if state_cross_0_string[j] == "+":
+                if state_cross_0_string[j + 1] == "1":
+                    index = j
+                else:
+                    index = j - 1
+
+                snapshot_x[index] = calculate_expectation(measurements_cross_x_0[i], pauli_X)
+                measured_qubits[index] = j
+            if state_cross_1_string[j] == "+":
+                if state_cross_1_string[j + 1] == "1":
+                    index = j
+                else:
+                    index = j - 1
+
+                snapshot_x[index] = calculate_expectation(measurements_cross_x_1[i], pauli_X)
+                measured_qubits[index] = j
+        expectation_cross_x.append(snapshot_x)
+
+    expectations = [expectation_det_x, expectation_cross_x]
+    return package_data(expectations, n, total_shots, delay, W, J, Gamma_1, Gamma_2, Gamma_phi, measured_qubits)
+
+
+def ramsey_global(n, total_shots, delay, Gamma_phi, W, J, Gamma_1=None, Gamma_2=None):
+    Gamma_phi = np.array(Gamma_phi) / 2  # TODO this is for testing (gamma_phi = 2 decay rate)
+    total_shots = int(total_shots / len(delay))
+    total_shots = int(total_shots / 2)
+
+    state = "+" * n
+
+    # state_det_0_string = ""
+    # state_det_1_string = ""
+    # state_cross_0_string = ["0"] * (2 * n)
+    # state_cross_1_string = ["0"] * (2 * n)
+    #
+    # # measurements_det_0 = []
+    # # measurements_det_1 = []
+    # # measurements_cross_0 = []
+    # # measurements_cross_1 = []
+    #
+
+    #
+    # # Create initial states
+    # for i in range(n):
+    #     if i % 2 == 0:
+    #         state_det_0_string += "+"
+    #         # measurements_det_0.append(i)
+    #         state_det_1_string += "0"
+    #     else:
+    #         state_det_0_string += "0"
+    #         state_det_1_string += "+"
+    #         # measurements_det_1.append(i)
+    #
+    # for i in range(n):
+    #     if (i - 1) % 4 == 0:
+    #         state_cross_0_string[i - 1] = "+"
+    #         state_cross_0_string[i] = "1"
+    #         state_cross_0_string[i + 1] = "+"
+    #     if (i - 3) % 4 == 0:
+    #         state_cross_1_string[i - 1] = "+"
+    #         state_cross_1_string[i] = "1"
+    #         state_cross_1_string[i + 1] = "+"
+    # state_cross_0_string = state_cross_0_string[:n]
+    # state_cross_1_string = state_cross_1_string[:n]
+    #
+    # for i in range(n - 1):
+    #     if state_cross_0_string[i + 1] == "+" and state_cross_0_string[i] == "+":
+    #         state_cross_0_string[i + 1] = "0"
+    #     if state_cross_1_string[i + 1] == "+" and state_cross_1_string[i] == "+":
+    #         state_cross_1_string[i + 1] = "0"
+    #
+    # # for i in range(n):
+    # #     if state_cross_0_string[i] == "+":
+    # #         measurements_cross_0.append(i)
+    # #     if state_cross_1_string[i] == "+":
+    # #         measurements_cross_1.append(i)
+    #
+    # state_cross_0_string = "".join(state_cross_0_string)
+    # state_cross_1_string = "".join(state_cross_1_string)
+    # state_det_0 = create_state(state_det_0_string)
+    # state_det_1 = create_state(state_det_1_string)
+    # state_cross_0 = create_state(state_cross_0_string)
+    # state_cross_1 = create_state(state_cross_1_string)
+    # Evolve the states
+    H = ramsey_H(n, W, J)
+    if Gamma_1 is None:
+        Gamma_1 = [0] * n
+        Gamma_2 = [0] * n
+    c_o = c_ops(Gamma_1, Gamma_2, Gamma_phi, n)
+
+    modif_delay = False
+    if delay[0] != 0:
+        delay = np.insert(delay, 0, 0.0)
+        modif_delay = True
+
+    evolved_state = mesolve(H, create_state(state), delay, c_o, [])
+    if modif_delay:
+        delay = delay[1:]
+        evolved_state.states = evolved_state.states[1:]
+
+    # Sample the states
+    measurements_x = sample_state(evolved_state.states, total_shots, "X" * n)
+    measurements_y = sample_state(evolved_state.states, total_shots, "Y" * n)
+
+    # Calculate the expectation values
+    expectation_x = []
+    expectation_y = []
+    # Detuning
+    for i in range(len(delay)):
+        snapshot_x = []
+        snapshot_y = []
+        for j in range(n):
+            pauli_X = j * "I" + "X" + (n - j - 1) * "I"
+            pauli_Y = j * "I" + "Y" + (n - j - 1) * "I"
+            snapshot_x.append(calculate_expectation(measurements_x[i], pauli_X))
+            snapshot_y.append(calculate_expectation(measurements_y[i], pauli_Y))
+
+            expectation_x.append(snapshot_x)
+            expectation_y.append(snapshot_y)
+    measured_qubits = [0] * n
+    expectations = [expectation_x, expectation_y]
+    return package_data(expectations, n, total_shots, delay, W, J, Gamma_1, Gamma_2, Gamma_phi, measured_qubits)
+
+
+def package_data(expectations, n, total_shots, delay, W, J, Gamma_1, Gamma_2, Gamma_phi, measured_qubits):
+    batches = []
+    for exp in expectations:
+        batch = Ramsey_batch()
+        batch.n = n
+        batch.total_shots = total_shots
+        batch.delay = delay
+        batch.W = W
+        batch.J = J.items()
+        batch.Gamma_1 = Gamma_1
+        batch.Gamma_2 = Gamma_2
+        batch.Gamma_phi = Gamma_phi
+        batch.zi = exp
+        batch.qubits_measured = measured_qubits
+        batches.append(batch)
+    return tuple(batches)
+
+
+def create_detuning_states(n):
+    state_det_0_string = ""
+    state_det_1_string = ""
+    for i in range(n):
+        if i % 2 == 0:
+            state_det_0_string += "+"
+            # measurements_det_0.append(i)
+            state_det_1_string += "0"
+        else:
+            state_det_0_string += "0"
+            state_det_1_string += "+"
+            # measurements_det_1.append(i)
+
+    return state_det_0_string, state_det_1_string
+
+
+def create_crosstalk_states(n):
+    state_cross_0_string = ["0"] * (2 * n)
+    state_cross_1_string = ["0"] * (2 * n)
+    for i in range(n):
+        if (i - 1) % 4 == 0:
+            state_cross_0_string[i - 1] = "+"
+            state_cross_0_string[i] = "1"
+            state_cross_0_string[i + 1] = "+"
+        if (i - 3) % 4 == 0:
+            state_cross_1_string[i - 1] = "+"
+            state_cross_1_string[i] = "1"
+            state_cross_1_string[i + 1] = "+"
+    state_cross_0_string = state_cross_0_string[:n]
+    state_cross_1_string = state_cross_1_string[:n]
+
+    for i in range(n - 1):
+        if state_cross_0_string[i + 1] == "+" and state_cross_0_string[i] == "+":
+            state_cross_0_string[i + 1] = "0"
+        if state_cross_1_string[i + 1] == "+" and state_cross_1_string[i] == "+":
+            state_cross_1_string[i + 1] = "0"
+
+    state_cross_0_string = "".join(state_cross_0_string)
+    state_cross_1_string = "".join(state_cross_1_string)
+
+    return state_cross_0_string, state_cross_1_string
+
+
+def run_exp():
+    initial_state = ''

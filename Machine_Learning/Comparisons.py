@@ -93,6 +93,10 @@ for filename in os.listdir(location):
         error, std = compare(location + filename)
         errors.append((filename, error))
         errors.append(std)
+        print(filename)
+        print(error)
+        print(std)
+
 
 for error in errors:
     print(error)

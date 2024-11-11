@@ -23,12 +23,17 @@ def complex_fit(batch_x, batch_y):
 
     parameters = []
     for i in range(len(data_x)):
-        initial_guess = [random.random(), random.random()]
+        # initial_guess = [random.random(), random.random()]
+        initial_guess = [0.5, 0.5]
+
         # Perform the curve fitting
         t_points = batch_x.delay
         z_points = np.concatenate([np.array(data_x[i]), np.array(data_y[i])])
         try:
-            params, params_covariance, *c = curve_fit(model_func, t_points, z_points, p0=initial_guess)
+            bounds_lower = [0] * 2
+            bounds_upper = [10, 2 * np.pi]
+            bounds = (bounds_lower, bounds_upper)
+            params, params_covariance, *c = curve_fit(model_func, t_points, z_points, p0=initial_guess, bounds=bounds)
         except:
             params = [100, 100]
         # self.decay_fit.append(params[0])
@@ -49,13 +54,14 @@ def fit_X(batch_x):
 
     parameters = []
     for i in range(len(data_x)):
-        initial_guess = [random.random(), random.random()]
+        # initial_guess = [random.random(), random.random()]
+        initial_guess = [0.5, 0.5]
         # Perform the curve fitting
         t_points = batch_x.delay
         z_points = np.concatenate([np.array(data_x[i])])
         try:
             bounds_lower = [0] * 2
-            bounds_upper = [2 * np.pi] * 2
+            bounds_upper = [10, 2 * np.pi]
             bounds = (bounds_lower, bounds_upper)
             params, params_covariance, *c = curve_fit(model_func, t_points, z_points, p0=initial_guess, bounds=bounds)
         except:
@@ -89,7 +95,6 @@ def one_by_one_X(batch_x_detuning, batch_x_crosstalk):
     J = np.abs(J)
     decay = np.abs(decay)
     W = np.abs(W)
-
 
     return decay, W, J
 
@@ -149,7 +154,7 @@ def full_complex_fit(batch_x, batch_y, neighbors=0, W_given=None, J_given=None, 
     if decay_given is None:
         initial_guess_A = [random.random() for i in range(batch_x.n)]
         bounds_lower_A = [0] * batch_x.n
-        bounds_upper_A = [2 * np.pi] * batch_x.n
+        bounds_upper_A = [4 * np.pi] * batch_x.n
     if W_given is None:
         initial_guess_W = [random.random() for i in range(batch_x.n)]
         bounds_lower_W = [-2 * np.pi] * batch_x.n
@@ -173,6 +178,7 @@ def full_complex_fit(batch_x, batch_y, neighbors=0, W_given=None, J_given=None, 
     guessed_J = params[2 * batch_x.n:3 * batch_x.n - 1][::-1]
     return guessed_decay, guessed_W, guessed_J
 
+
 def full_complex_fit_modified(batch_x, batch_y, neighbors=0, W_given=None, J_given=None, decay_given=None):
     n = batch_x.n
 
@@ -192,8 +198,8 @@ def full_complex_fit_modified(batch_x, batch_y, neighbors=0, W_given=None, J_giv
     def residuals(params, t, data):
         n = batch_x.n
         W = W_given if W_given is not None else params[:n]
-        A = decay_given if decay_given is not None else params[n:2*n]
-        J = J_given if J_given is not None else params[2*n:3*n-1]
+        A = decay_given if decay_given is not None else params[n:2 * n]
+        J = J_given if J_given is not None else params[2 * n:3 * n - 1]
 
         model_values = np.concatenate([expr(t, *W, *A, *J) for expr in symbolic_exp]).T
         return np.abs(data - model_values)
@@ -225,13 +231,15 @@ def full_complex_fit_modified(batch_x, batch_y, neighbors=0, W_given=None, J_giv
 
     params = result.x
     guessed_decay = params[:n]
-    guessed_W = params[n:2*n]
-    guessed_J = params[2*n:3*n-1]
+    guessed_W = params[n:2 * n]
+    guessed_J = params[2 * n:3 * n - 1]
 
     return guessed_decay, guessed_W, guessed_J
+
+
 def percent_error(correct, fitted):
     mse = np.mean((correct - fitted) ** 2)
-    return np.sqrt(mse) / np.mean(np.abs(correct))
+    return np.sqrt(mse) / np.linalg.norm(correct)
 
 
 def calc_dist(fitted_values, correct_values):
