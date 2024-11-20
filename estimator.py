@@ -355,3 +355,27 @@ def full_complex_fit_test(batch_x_rot, batch_y_rot, batch_x_rot2, batch_y_rot2, 
 
     guessed_J = params[::-1]
     return guessed_decay, guessed_W, guessed_J
+
+
+def mean_of_medians(errors_reshaped, k):
+    mean_of_medians = []
+    std_of_medians = []
+
+    for errors in errors_reshaped:
+        # Calculate medians for each reshaped array
+        # medians = [np.median(np.array(errors[i])) for i in range(len(errors_reshaped))]
+
+        # Split medians into k equal groups for bootstrapping
+        group_size = len(errors) // k
+        median_groups = [errors[i * group_size:(i + 1) * group_size] for i in range(k)]
+
+        # Calculate the mean of medians for each group
+        group_means = [np.mean(group) for group in median_groups]
+
+        # Compute the mean of these group means and its standard deviation
+        m_m = np.mean(group_means)
+        s_m = np.std(group_means)
+        mean_of_medians.append(m_m)
+        std_of_medians.append(s_m)
+
+    return mean_of_medians, std_of_medians
