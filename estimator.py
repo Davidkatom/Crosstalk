@@ -238,8 +238,20 @@ def full_complex_fit_modified(batch_x, batch_y, neighbors=0, W_given=None, J_giv
 
 
 def percent_error(correct, fitted):
-    mse = np.mean((correct - fitted) ** 2)
-    return np.sqrt(mse) / np.linalg.norm(correct)
+    # mse = np.mean((correct - fitted) ** 2)
+    # return np.sqrt(mse) / np.linalg.norm(correct)
+    # Compute the absolute difference between correct and fitted parameters
+    absolute_errors = np.abs(correct - fitted)
+
+    # Compute the relative error per parameter
+    # Add a small epsilon to avoid division by zero
+    epsilon = np.finfo(float).eps
+    relative_errors = absolute_errors / (np.abs(correct) + epsilon)
+
+    # Compute the average relative error
+    average_relative_error = np.mean(relative_errors)
+
+    return average_relative_error
 
 
 def calc_dist(fitted_values, correct_values):

@@ -331,6 +331,157 @@ def ramsey_local(n, total_shots, delay, Gamma_phi, W, J, Gamma_1=None, Gamma_2=N
     return package_data(expectations, n, total_shots, delay, W, J, Gamma_1, Gamma_2, Gamma_phi, measured_qubits)
 
 
+def ramsey_local_gausian(n, total_shots, optimal_time,sigma, delay, Gamma_phi, W, J, Gamma_1=None, Gamma_2=None):
+    Gamma_phi = np.array(Gamma_phi) / 2  # TODO this is for testing (gamma_phi = 2 decay rate)
+    total_shots = int(total_shots / 8)
+
+    # Compute the probability density at each delay time
+    probabilities = np.exp(-0.5 * ((delay - optimal_time) / sigma) ** 2)
+
+    # Normalize the probabilities so that sum(probabilities) = 1
+    probabilities /= probabilities.sum()
+
+    # Compute the number of shots for each delay time
+    shots_distribution = probabilities * total_shots
+
+    # Since we need integer numbers of shots, we can take the floor
+    integer_shots = np.floor(shots_distribution).astype(int)
+
+    # Compute the remaining shots to allocate
+    remaining_shots = total_shots - integer_shots.sum()
+
+    # If there are remaining shots, allocate them to the bins with the highest fractional parts
+    fractional_parts = shots_distribution - integer_shots
+    sorted_indices = np.argsort(fractional_parts)  # Indices of fractional parts in descending order
+
+    for i in range(int(remaining_shots)):
+        idx = sorted_indices[i % len(sorted_indices)]
+        integer_shots[idx] += 1
+
+    # Now, integer_shots sum up to total_shots
+    shots_distribution = integer_shots
+
+
+
+
+    state_det_0_string, state_det_1_string = create_detuning_states(n)
+    state_cross_0_string, state_cross_1_string = create_crosstalk_states(n)
+
+
+    # Evolve the states
+    H = ramsey_H(n, W, J)
+    if Gamma_1 is None:
+        Gamma_1 = [0] * n
+        Gamma_2 = [0] * n
+    c_o = c_ops(Gamma_1, Gamma_2, Gamma_phi, n)
+
+    modif_delay = False
+    if delay[0] != 0:
+        delay = np.insert(delay, 0, 0.0)
+        modif_delay = True
+
+    evolved_det0 = mesolve(H, create_state(state_det_0_string), delay, c_o, [])
+    evolved_det1 = mesolve(H, create_state(state_det_1_string), delay, c_o, [])
+    evolved_cross0 = mesolve(H, create_state(state_cross_0_string), delay, c_o, [])
+    evolved_cross1 = mesolve(H, create_state(state_cross_1_string), delay, c_o, [])
+
+    if modif_delay:
+        delay = delay[1:]
+        evolved_det0.states = evolved_det0.states[1:]
+        evolved_det1.states = evolved_det1.states[1:]
+        evolved_cross0.states = evolved_cross0.states[1:]
+        evolved_cross1.states = evolved_cross1.states[1:]
+
+    # Sample the states
+
+    measurements_det_x_0 = []
+    measurements_det_x_1 = []
+    measurements_det_y_0 = []
+    measurements_det_y_1 = []
+    measurements_cross_x_0 = []
+    measurements_cross_x_1 = []
+    measurements_cross_y_0 = []
+    measurements_cross_y_1 = []
+
+    new_delay = []
+    for i in range(len(delay)):
+        if shots_distribution[i] == 0:
+            continue
+        new_delay.append(delay[i])
+        measurements_det_x_0.append(sample_state([evolved_det0.states[i]], shots_distribution[i], "X" * n))
+        measurements_det_x_1.append(sample_state([evolved_det1.states[i]], shots_distribution[i], "X" * n))
+        measurements_det_y_0.append(sample_state([evolved_det0.states[i]], shots_distribution[i], "Y" * n))
+        measurements_det_y_1.append(sample_state([evolved_det1.states[i]], shots_distribution[i], "Y" * n))
+        measurements_cross_x_0.append(sample_state([evolved_cross0.states[i]], shots_distribution[i], "X" * n))
+        measurements_cross_x_1.append(sample_state([evolved_cross1.states[i]], shots_distribution[i], "X" * n))
+        measurements_cross_y_0.append(sample_state([evolved_cross0.states[i]], shots_distribution[i], "Y" * n))
+        measurements_cross_y_1.append(sample_state([evolved_cross1.states[i]], shots_distribution[i], "Y" * n))
+    delay = new_delay
+    measurements_det_x_0 = np.concatenate(measurements_det_x_0)
+    measurements_det_x_1 = np.concatenate(measurements_det_x_1)
+    measurements_det_y_0 = np.concatenate(measurements_det_y_0)
+    measurements_det_y_1 = np.concatenate(measurements_det_y_1)
+    measurements_cross_x_0 = np.concatenate(measurements_cross_x_0)
+    measurements_cross_x_1 = np.concatenate(measurements_cross_x_1)
+    measurements_cross_y_0 = np.concatenate(measurements_cross_y_0)
+    measurements_cross_y_1 = np.concatenate(measurements_cross_y_1)
+
+
+    # Calculate the expectation values
+    expectation_det_x = []
+    expectation_det_y = []
+    expectation_cross_x = []
+    expectation_cross_y = []
+    # Detuning
+    for i in range(len(delay)):
+        snapshot_x = []
+        snapshot_y = []
+        for j in range(n):
+            pauli_X = j * "I" + "X" + (n - j - 1) * "I"
+            pauli_Y = j * "I" + "Y" + (n - j - 1) * "I"
+            if j % 2 == 0:
+                snapshot_x.append(calculate_expectation(measurements_det_x_0[i], pauli_X))
+                snapshot_y.append(calculate_expectation(measurements_det_y_0[i], pauli_Y))
+            else:
+                snapshot_x.append(calculate_expectation(measurements_det_x_1[i], pauli_X))
+                snapshot_y.append(calculate_expectation(measurements_det_y_1[i], pauli_Y))
+        expectation_det_x.append(snapshot_x)
+        expectation_det_y.append(snapshot_y)
+
+    # Crosstalk
+    measured_qubits = [0] * n
+    for i in range(len(delay)):
+        snapshot_x = [0] * n
+        snapshot_y = [0] * n
+        for j in range(0, n):
+            pauli_X = j * "I" + "X" + (n - j - 1) * "I"
+            pauli_Y = j * "I" + "Y" + (n - j - 1) * "I"
+
+            if state_cross_0_string[j] == "+":
+                if state_cross_0_string[j + 1] == "1":
+                    index = j
+                else:
+                    index = j - 1
+
+                snapshot_x[index] = calculate_expectation(measurements_cross_x_0[i], pauli_X)
+                snapshot_y[index] = calculate_expectation(measurements_cross_y_0[i], pauli_Y)
+                measured_qubits[index] = j
+            if state_cross_1_string[j] == "+":
+                if state_cross_1_string[j + 1] == "1":
+                    index = j
+                else:
+                    index = j - 1
+
+                snapshot_x[index] = calculate_expectation(measurements_cross_x_1[i], pauli_X)
+                snapshot_y[index] = calculate_expectation(measurements_cross_y_1[i], pauli_Y)
+                measured_qubits[index] = j
+        expectation_cross_x.append(snapshot_x)
+        expectation_cross_y.append(snapshot_y)
+
+    expectations = [expectation_det_x, expectation_det_y, expectation_cross_x, expectation_cross_y]
+    return package_data(expectations, n, total_shots, delay, W, J, Gamma_1, Gamma_2, Gamma_phi, measured_qubits)
+
+
 def ramsey_local_X(n, total_shots, delay, Gamma_phi, W, J, Gamma_1=None, Gamma_2=None):
     Gamma_phi = np.array(Gamma_phi) / 2  # TODO this is for testing (gamma_phi = 2 decay rate)
     total_shots = int(total_shots / len(delay))
