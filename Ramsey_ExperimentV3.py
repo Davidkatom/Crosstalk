@@ -235,11 +235,12 @@ def sample_state(states, shots: int, measurement: str):
 
 def ramsey_local(n, total_shots, delay, Gamma_phi, W, J, Gamma_1=None, Gamma_2=None):
     Gamma_phi = np.array(Gamma_phi) / 2  # TODO this is for testing (gamma_phi = 2 decay rate)
-    total_shots = int(total_shots / len(delay))
+    total_shots = total_shots / len(delay)
     if n != 1:
         total_shots = int(total_shots / 8)
     else:
         total_shots = int(total_shots / 2)
+
 
     state_det_0_string, state_det_1_string = create_detuning_states(n)
     state_cross_0_string, state_cross_1_string = create_crosstalk_states(n)
@@ -489,10 +490,10 @@ def ramsey_local_gausian(n, total_shots, optimal_time,sigma, delay, Gamma_phi, W
 
 def ramsey_local_X(n, total_shots, delay, Gamma_phi, W, J, Gamma_1=None, Gamma_2=None):
     Gamma_phi = np.array(Gamma_phi) / 2  # TODO this is for testing (gamma_phi = 2 decay rate)
-    total_shots = int(total_shots / len(delay))
+    total_shots = total_shots / len(delay)
     if n != 1:
-        total_shots = int(total_shots / 4)
-
+        total_shots = total_shots / 4
+    total_shots = int(total_shots)
     state_det_0_string, state_det_1_string = create_detuning_states(n)
     state_cross_0_string, state_cross_1_string = create_crosstalk_states(n)
 

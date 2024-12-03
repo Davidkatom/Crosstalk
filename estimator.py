@@ -251,7 +251,7 @@ def percent_error(correct, fitted):
     # Compute the average relative error
     average_relative_error = np.mean(relative_errors)
 
-    return average_relative_error
+    return average_relative_error, relative_errors
 
 
 def calc_dist(fitted_values, correct_values):
