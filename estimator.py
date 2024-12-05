@@ -31,7 +31,7 @@ def complex_fit(batch_x, batch_y):
         z_points = np.concatenate([np.array(data_x[i]), np.array(data_y[i])])
         try:
             bounds_lower = [0] * 2
-            bounds_upper = [10, 2 * np.pi]
+            bounds_upper = [12, 2 * np.pi]
             bounds = (bounds_lower, bounds_upper)
             params, params_covariance, *c = curve_fit(model_func, t_points, z_points, p0=initial_guess, bounds=bounds)
         except:
@@ -61,7 +61,7 @@ def fit_X(batch_x):
         z_points = np.concatenate([np.array(data_x[i])])
         try:
             bounds_lower = [0] * 2
-            bounds_upper = [10, 2 * np.pi]
+            bounds_upper = [12, 2 * np.pi]
             bounds = (bounds_lower, bounds_upper)
             params, params_covariance, *c = curve_fit(model_func, t_points, z_points, p0=initial_guess, bounds=bounds)
         except:
@@ -238,20 +238,26 @@ def full_complex_fit_modified(batch_x, batch_y, neighbors=0, W_given=None, J_giv
 
 
 def percent_error(correct, fitted):
+    #TODO square of mean
+
     # mse = np.mean((correct - fitted) ** 2)
     # return np.sqrt(mse) / np.linalg.norm(correct)
     # Compute the absolute difference between correct and fitted parameters
-    absolute_errors = np.abs(correct - fitted)
+    # absolute_errors = np.abs(correct - fitted)
+
+    errors = (correct - fitted) ** 2
+    errors = errors/correct**2
+
 
     # Compute the relative error per parameter
     # Add a small epsilon to avoid division by zero
-    epsilon = np.finfo(float).eps
-    relative_errors = absolute_errors / (np.abs(correct) + epsilon)
+    # epsilon = np.finfo(float).eps
+    # relative_errors = absolute_errors / (np.abs(correct) + epsilon)
 
     # Compute the average relative error
-    average_relative_error = np.mean(relative_errors)
+    # average_relative_error = np.mean(relative_errors)
 
-    return average_relative_error, relative_errors
+    return errors
 
 
 def calc_dist(fitted_values, correct_values):
@@ -369,7 +375,7 @@ def full_complex_fit_test(batch_x_rot, batch_y_rot, batch_x_rot2, batch_y_rot2, 
     return guessed_decay, guessed_W, guessed_J
 
 
-def mean_of_medians(errors_reshaped, k):
+def mean_of_medians(errors_reshaped, k, params):
     mean_of_medians = []
     std_of_medians = []
 
@@ -385,8 +391,8 @@ def mean_of_medians(errors_reshaped, k):
         group_means = [np.mean(group) for group in median_groups]
 
         # Compute the mean of these group means and its standard deviation
-        m_m = np.mean(group_means)
-        s_m = np.std(group_means)
+        m_m = np.sqrt(np.mean(group_means)) #error calc returns errors squared
+        s_m = np.sqrt(np.std(group_means))
         mean_of_medians.append(m_m)
         std_of_medians.append(s_m)
 
