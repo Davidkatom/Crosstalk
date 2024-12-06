@@ -238,7 +238,7 @@ def full_complex_fit_modified(batch_x, batch_y, neighbors=0, W_given=None, J_giv
 
 
 def percent_error(correct, fitted):
-    #TODO square of mean
+    # TODO square of mean
 
     # mse = np.mean((correct - fitted) ** 2)
     # return np.sqrt(mse) / np.linalg.norm(correct)
@@ -246,8 +246,7 @@ def percent_error(correct, fitted):
     # absolute_errors = np.abs(correct - fitted)
 
     errors = (correct - fitted) ** 2
-    errors = errors/correct**2
-
+    errors = errors / (correct ** 2)
 
     # Compute the relative error per parameter
     # Add a small epsilon to avoid division by zero
@@ -388,11 +387,11 @@ def mean_of_medians(errors_reshaped, k, params):
         median_groups = [errors[i * group_size:(i + 1) * group_size] for i in range(k)]
 
         # Calculate the mean of medians for each group
-        group_means = [np.mean(group) for group in median_groups]
+        group_means = [np.sqrt(np.mean(group)) for group in median_groups]
 
         # Compute the mean of these group means and its standard deviation
-        m_m = np.sqrt(np.mean(group_means)) #error calc returns errors squared
-        s_m = np.sqrt(np.std(group_means))
+        m_m = np.mean(group_means)  # error calc returns errors squared
+        s_m = np.std(group_means)
         mean_of_medians.append(m_m)
         std_of_medians.append(s_m)
 
