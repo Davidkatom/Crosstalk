@@ -243,20 +243,20 @@ def percent_error(correct, fitted):
     # mse = np.mean((correct - fitted) ** 2)
     # return np.sqrt(mse) / np.linalg.norm(correct)
     # Compute the absolute difference between correct and fitted parameters
-    # absolute_errors = np.abs(correct - fitted)
+    absolute_errors = np.abs(correct - fitted)
 
-    errors = (correct - fitted) ** 2
-    errors = errors / (correct ** 2)
+    # errors = (correct - fitted) ** 2
+    # errors = errors / (correct ** 2)
 
     # Compute the relative error per parameter
     # Add a small epsilon to avoid division by zero
-    # epsilon = np.finfo(float).eps
-    # relative_errors = absolute_errors / (np.abs(correct) + epsilon)
+    epsilon = np.finfo(float).eps
+    relative_errors = absolute_errors / (np.abs(correct) + epsilon)
 
     # Compute the average relative error
     # average_relative_error = np.mean(relative_errors)
 
-    return errors
+    return relative_errors
 
 
 def calc_dist(fitted_values, correct_values):
@@ -374,7 +374,7 @@ def full_complex_fit_test(batch_x_rot, batch_y_rot, batch_x_rot2, batch_y_rot2, 
     return guessed_decay, guessed_W, guessed_J
 
 
-def mean_of_medians(errors_reshaped, k, params):
+def mean_of_medians(errors_reshaped, k):
     mean_of_medians = []
     std_of_medians = []
 
@@ -387,7 +387,7 @@ def mean_of_medians(errors_reshaped, k, params):
         median_groups = [errors[i * group_size:(i + 1) * group_size] for i in range(k)]
 
         # Calculate the mean of medians for each group
-        group_means = [np.sqrt(np.mean(group)) for group in median_groups]
+        group_means = [(np.mean(group)) for group in median_groups]
 
         # Compute the mean of these group means and its standard deviation
         m_m = np.mean(group_means)  # error calc returns errors squared
