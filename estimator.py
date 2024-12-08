@@ -23,14 +23,14 @@ def complex_fit(batch_x, batch_y):
 
     parameters = []
     for i in range(len(data_x)):
-        # initial_guess = [random.random(), random.random()]
-        initial_guess = [0.5, 0.5]
+        initial_guess = [random.random(), random.random()]
+        initial_guess = [1, 1]
 
         # Perform the curve fitting
         t_points = batch_x.delay
         z_points = np.concatenate([np.array(data_x[i]), np.array(data_y[i])])
         try:
-            bounds_lower = [0] * 2
+            bounds_lower = [-12, 0]
             bounds_upper = [12, 2 * np.pi]
             bounds = (bounds_lower, bounds_upper)
             params, params_covariance, *c = curve_fit(model_func, t_points, z_points, p0=initial_guess, bounds=bounds)
@@ -60,7 +60,7 @@ def fit_X(batch_x):
         t_points = batch_x.delay
         z_points = np.concatenate([np.array(data_x[i])])
         try:
-            bounds_lower = [0] * 2
+            bounds_lower = [-12,0]
             bounds_upper = [12, 2 * np.pi]
             bounds = (bounds_lower, bounds_upper)
             params, params_covariance, *c = curve_fit(model_func, t_points, z_points, p0=initial_guess, bounds=bounds)
@@ -239,19 +239,16 @@ def full_complex_fit_modified(batch_x, batch_y, neighbors=0, W_given=None, J_giv
 
 def percent_error(correct, fitted):
     # TODO square of mean
-
-    # mse = np.mean((correct - fitted) ** 2)
-    # return np.sqrt(mse) / np.linalg.norm(correct)
-    # Compute the absolute difference between correct and fitted parameters
-    absolute_errors = np.abs(correct - fitted)
+    epsilon = np.finfo(float).eps
+    mse = np.mean((correct - fitted) ** 2)
+    relative_errors = mse / correct ** 2 + epsilon
+    # absolute_errors = np.abs(correct - fitted)
 
     # errors = (correct - fitted) ** 2
     # errors = errors / (correct ** 2)
 
     # Compute the relative error per parameter
     # Add a small epsilon to avoid division by zero
-    epsilon = np.finfo(float).eps
-    relative_errors = absolute_errors / (np.abs(correct) + epsilon)
 
     # Compute the average relative error
     # average_relative_error = np.mean(relative_errors)
@@ -387,7 +384,7 @@ def mean_of_medians(errors_reshaped, k):
         median_groups = [errors[i * group_size:(i + 1) * group_size] for i in range(k)]
 
         # Calculate the mean of medians for each group
-        group_means = [(np.mean(group)) for group in median_groups]
+        group_means = [np.sqrt((np.mean(group))) for group in median_groups]
 
         # Compute the mean of these group means and its standard deviation
         m_m = np.mean(group_means)  # error calc returns errors squared
