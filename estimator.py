@@ -55,13 +55,13 @@ def fit_X(batch_x):
     parameters = []
     for i in range(len(data_x)):
         # initial_guess = [random.random(), random.random()]
-        initial_guess = [0.5, 0.5]
+        initial_guess = [1, 0.5]
         # Perform the curve fitting
         t_points = batch_x.delay
         z_points = np.concatenate([np.array(data_x[i])])
         try:
             bounds_lower = [0,0]
-            bounds_upper = [6, 2 * np.pi]
+            bounds_upper = [12, 2 * np.pi]
             bounds = (bounds_lower, bounds_upper)
             params, params_covariance, *c = curve_fit(model_func, t_points, z_points, p0=initial_guess, bounds=bounds)
         except:
@@ -69,8 +69,8 @@ def fit_X(batch_x):
         parameters.append(np.abs(params))
     return parameters
 
-# from scipy.optimize import minimize
-#
+from scipy.optimize import minimize
+
 # def fit_X(batch_x):
 #     def model_func(t, a, w):
 #         return (np.cos(w * t)) * np.exp(-a * t)
@@ -281,12 +281,11 @@ def full_complex_fit_modified(batch_x, batch_y, neighbors=0, W_given=None, J_giv
 def percent_error(correct, fitted):
     # TODO square of mean
     epsilon = np.finfo(float).eps
-    mse = np.mean((correct - fitted) ** 2)
-    relative_errors = mse / correct ** 2 + epsilon
-    # absolute_errors = np.abs(correct - fitted)
+    mse = (correct - fitted) ** 2
+    relative_errors = mse
 
-    # errors = (correct - fitted) ** 2
-    # errors = errors / (correct ** 2)
+    # absolute_errors = np.abs(correct - fitted)
+    # relative_errors = absolute_errors / (correct  + epsilon)
 
     # Compute the relative error per parameter
     # Add a small epsilon to avoid division by zero
@@ -426,6 +425,7 @@ def mean_of_medians(errors_reshaped, k):
 
         # Calculate the mean of medians for each group
         group_means = [np.sqrt((np.mean(group))) for group in median_groups]
+        # group_means = [(np.mean(group)) for group in median_groups]
 
         # Compute the mean of these group means and its standard deviation
         m_m = np.mean(group_means)  # error calc returns errors squared
