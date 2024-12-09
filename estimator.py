@@ -42,74 +42,74 @@ def complex_fit(batch_x, batch_y):
     return parameters
 
 
-# def fit_X(batch_x):
-#     def model_func(t, a, w):
-#         x_model = (np.cos(w * t)) * np.exp(-a * t)
-#         return x_model
-#
-#     data_x = []
-#
-#     for i in range(batch_x.n):
-#         data_x.append(batch_x.get_zi(i))
-#
-#     parameters = []
-#     for i in range(len(data_x)):
-#         # initial_guess = [random.random(), random.random()]
-#         initial_guess = [3, 3]
-#         # Perform the curve fitting
-#         t_points = batch_x.delay
-#         z_points = np.concatenate([np.array(data_x[i])])
-#         try:
-#             bounds_lower = [-12,0]
-#             bounds_upper = [12, 2 * np.pi]
-#             bounds = (bounds_lower, bounds_upper)
-#             params, params_covariance, *c = curve_fit(model_func, t_points, z_points, p0=initial_guess, bounds=bounds)
-#         except:
-#             params = [100, 100]
-#         parameters.append(np.abs(params))
-#     return parameters\
-
-from scipy.optimize import minimize
-
 def fit_X(batch_x):
     def model_func(t, a, w):
-        return (np.cos(w * t)) * np.exp(-a * t)
-
-    def absolute_error_loss(params, t_points, z_points):
-        a, w = params
-        predictions = model_func(t_points, a, w)
-        return np.sum(np.abs(predictions - z_points))
+        x_model = (np.cos(w * t)) * np.exp(-a * t)
+        return x_model
 
     data_x = []
+
     for i in range(batch_x.n):
         data_x.append(batch_x.get_zi(i))
 
     parameters = []
     for i in range(len(data_x)):
+        # initial_guess = [random.random(), random.random()]
+        initial_guess = [0.5, 0.5]
+        # Perform the curve fitting
         t_points = batch_x.delay
         z_points = np.concatenate([np.array(data_x[i])])
-
-        initial_guess = np.array([3, 3])  # Same initial guess as before
-        bounds = [(-12, 12), (0, 2 * np.pi)]  # Same bounds as before
-
-        # Use minimize to optimize with absolute error
-        result = minimize(
-            absolute_error_loss,
-            initial_guess,
-            args=(t_points, z_points),
-            bounds=bounds,
-            method='L-BFGS-B'
-        )
-
-        if result.success:
-            params = result.x
-        else:
-            params = [100, 100]  # Fallback values in case of failure
-
+        try:
+            bounds_lower = [0,0]
+            bounds_upper = [6, 2 * np.pi]
+            bounds = (bounds_lower, bounds_upper)
+            params, params_covariance, *c = curve_fit(model_func, t_points, z_points, p0=initial_guess, bounds=bounds)
+        except:
+            params = [100, 100]
         parameters.append(np.abs(params))
-
     return parameters
 
+# from scipy.optimize import minimize
+#
+# def fit_X(batch_x):
+#     def model_func(t, a, w):
+#         return (np.cos(w * t)) * np.exp(-a * t)
+#
+#     def absolute_error_loss(params, t_points, z_points):
+#         a, w = params
+#         predictions = model_func(t_points, a, w)
+#         return np.sum(np.abs(predictions - z_points))
+#
+#     data_x = []
+#     for i in range(batch_x.n):
+#         data_x.append(batch_x.get_zi(i))
+#
+#     parameters = []
+#     for i in range(len(data_x)):
+#         t_points = batch_x.delay
+#         z_points = np.concatenate([np.array(data_x[i])])
+#
+#         initial_guess = np.array([1, 1])  # Same initial guess as before
+#         bounds = [(0, 6), (0, 2 * np.pi)]  # Same bounds as before
+#
+#         # Use minimize to optimize with absolute error
+#         result = minimize(
+#             absolute_error_loss,
+#             initial_guess,
+#             args=(t_points, z_points),
+#             bounds=bounds,
+#             method='L-BFGS-B'
+#         )
+#
+#         if result.success:
+#             params = result.x
+#         else:
+#             params = [100, 100]  # Fallback values in case of failure
+#
+#         parameters.append(np.abs(params))
+#
+#     return parameters
+#
 
 def one_by_one_fit(batch_x_detuning, batch_y_detuning, batch_x_crosstalk, batch_y_crosstalk):
     n = batch_x_detuning.n
