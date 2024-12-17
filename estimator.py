@@ -429,7 +429,7 @@ def mean_of_medians(errors_reshaped, k):
 
         # Compute the mean of these group means and its standard deviation
         m_m = np.mean(group_means)  # error calc returns errors squared
-        s_m = np.std(group_means)
+        s_m = np.std(group_means)/np.sqrt(k)
         mean_of_medians.append(m_m)
         std_of_medians.append(s_m)
 
