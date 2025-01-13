@@ -64,6 +64,7 @@ def fit_X(batch_x):
             bounds_upper = [12, 2 * np.pi]
             bounds = (bounds_lower, bounds_upper)
             params, params_covariance, *c = curve_fit(model_func, t_points, z_points, p0=initial_guess, bounds=bounds)
+
         except:
             params = [100, 100]
         parameters.append(np.abs(params))
