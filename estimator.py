@@ -323,7 +323,7 @@ def full_complex_fit_test(batch_x_rot, batch_y_rot, batch_x_rot2, batch_y_rot2, 
     a = symbols(f'a0:{n}', real=True)
 
     threshold = 0.1
-    symbolic_exp = [sp.expand(function) for function in symbolic_exp]
+    symbolic_exp = [np.expand(function) for function in symbolic_exp]
     symbolic_exp = [func.as_ordered_terms() for func in symbolic_exp]
 
     filtered = []
@@ -374,7 +374,7 @@ def full_complex_fit_test(batch_x_rot, batch_y_rot, batch_x_rot2, batch_y_rot2, 
         data2.append(batch_y_rot2.RamseyExperiments[i].get_n_nearest_neighbors(0))
 
     symbolic_exp = symbolic_evolution.get_expectation_values_exp(n, neighbors=0, rot=rot2)
-    symbolic_exp = [sp.expand(function) for function in symbolic_exp]
+    symbolic_exp = [np.expand(function) for function in symbolic_exp]
     symbolic_exp = [func.as_ordered_terms() for func in symbolic_exp]
 
     filtered = []
