@@ -578,60 +578,6 @@ def ramsey_global(n, total_shots, delay, Gamma_phi, W, J, Gamma_1=None, Gamma_2=
 
     state = "+" * n
 
-    # state_det_0_string = ""
-    # state_det_1_string = ""
-    # state_cross_0_string = ["0"] * (2 * n)
-    # state_cross_1_string = ["0"] * (2 * n)
-    #
-    # # measurements_det_0 = []
-    # # measurements_det_1 = []
-    # # measurements_cross_0 = []
-    # # measurements_cross_1 = []
-    #
-
-    #
-    # # Create initial states
-    # for i in range(n):
-    #     if i % 2 == 0:
-    #         state_det_0_string += "+"
-    #         # measurements_det_0.append(i)
-    #         state_det_1_string += "0"
-    #     else:
-    #         state_det_0_string += "0"
-    #         state_det_1_string += "+"
-    #         # measurements_det_1.append(i)
-    #
-    # for i in range(n):
-    #     if (i - 1) % 4 == 0:
-    #         state_cross_0_string[i - 1] = "+"
-    #         state_cross_0_string[i] = "1"
-    #         state_cross_0_string[i + 1] = "+"
-    #     if (i - 3) % 4 == 0:
-    #         state_cross_1_string[i - 1] = "+"
-    #         state_cross_1_string[i] = "1"
-    #         state_cross_1_string[i + 1] = "+"
-    # state_cross_0_string = state_cross_0_string[:n]
-    # state_cross_1_string = state_cross_1_string[:n]
-    #
-    # for i in range(n - 1):
-    #     if state_cross_0_string[i + 1] == "+" and state_cross_0_string[i] == "+":
-    #         state_cross_0_string[i + 1] = "0"
-    #     if state_cross_1_string[i + 1] == "+" and state_cross_1_string[i] == "+":
-    #         state_cross_1_string[i + 1] = "0"
-    #
-    # # for i in range(n):
-    # #     if state_cross_0_string[i] == "+":
-    # #         measurements_cross_0.append(i)
-    # #     if state_cross_1_string[i] == "+":
-    # #         measurements_cross_1.append(i)
-    #
-    # state_cross_0_string = "".join(state_cross_0_string)
-    # state_cross_1_string = "".join(state_cross_1_string)
-    # state_det_0 = create_state(state_det_0_string)
-    # state_det_1 = create_state(state_det_1_string)
-    # state_cross_0 = create_state(state_cross_0_string)
-    # state_cross_1 = create_state(state_cross_1_string)
-    # Evolve the states
     H = ramsey_H(n, W, J)
     if Gamma_1 is None:
         Gamma_1 = [0] * n
