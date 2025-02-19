@@ -9,13 +9,13 @@ h = lambda n, J, z: sum([J[i] * (z[i] - 1) * (z[(i + 1) % n] - 1) for i in range
 
 
 def crosstalk_operator(size, t):
-    #J = [sp.Symbol(f'J{i + 1}') for i in range(size - 1)]
-    J = [sp.Symbol(f'J{i + 1}') for i in range(size)]
+    #J = [np.Symbol(f'J{i + 1}') for i in range(size - 1)]
+    J = [np.Symbol(f'J{i + 1}') for i in range(size)]
     hem = np.zeros((2 ** size, 2 ** size), dtype=object)
     for i in range(2 ** size):
         binary = '{0:b}'.format(i).zfill(size)
         Z = [(-1) ** int(i) for i in binary]
-        hem[i, i] = sp.exp(-h(size, J, Z) * 1j * t)
+        hem[i, i] = np.exp(-h(size, J, Z) * 1j * t)
     return hem
 
 
@@ -38,18 +38,18 @@ def one_dim(t, results, n):
         op = np.matmul(op, H)
 
         eq = (np.abs(np.dot(np.dot(state(n, i), op), state(n, 0).T)) ** 2 * shots - results.get(f"{i:0{n}b}", 0)) ** 2
-        # eq = sp.sympify(eq)
+        # eq = np.sympify(eq)
         equations.append(eq)
     return solve(equations, n)
 
 
 def solve(equations, size):
-    # J = [sp.Symbol(f'J{i + 1}') for i in range(size - 1)]
-    J = [sp.Symbol(f'J{i + 1}') for i in range(size)]
+    # J = [np.Symbol(f'J{i + 1}') for i in range(size - 1)]
+    J = [np.Symbol(f'J{i + 1}') for i in range(size)]
 
-    expr = sp.sympify(sum(equations))
-    # expr = sp.sympify(equations[0]+equations[1])
-    f = sp.lambdify(J, expr, 'numpy')
+    expr = np.sympify(sum(equations))
+    # expr = np.sympify(equations[0]+equations[1])
+    f = np.lambdify(J, expr, 'numpy')
 
     def print_progress(xk, state):
         print(f"Iteration: {state['nit']}, Function Value: {state['fun']}, Variables: {xk}")
