@@ -105,5 +105,8 @@ if __name__ == "__main__":
         print(minimal_chains)
         print(len(minimal_chains))
         print("Visualization:")
-        print(generator.draw_chains(minimal_chains))
+        print()
+        generator.draw_chains(minimal_chains)
+
+
 

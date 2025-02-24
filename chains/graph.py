@@ -235,6 +235,13 @@ class Graph:
             edges = dict(temp_graph.get_graph())
         return subgraphs
 
+def tuplate_edges(subgraph):
+    flipped = subgraph.flipped_nodes
+    tuples = []
+    for node in flipped:
+        for neighbor in subgraph.edges[node]:
+            tuples.append((node, neighbor))
+
 def print_subgraphs(subgraphs):
     for i, subgraph in enumerate(subgraphs):
         print(f"Subgraph {i + 1}:")
