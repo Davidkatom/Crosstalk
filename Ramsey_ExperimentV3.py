@@ -1,9 +1,6 @@
-import random
 import numpy as np
-import matplotlib.pyplot as plt
 from qutip import *
 from qutip_qip.operations import hadamard_transform, snot, phasegate
-from qutip.solver.integrator import IntegratorException
 
 
 class Ramsey_batch:
@@ -111,7 +108,9 @@ def sample_measurements(rho, num_shots, measurement_basis):
     counts (dict): Dictionary with measurement outcomes as keys and counts as values.
     """
     N = int(np.log2(rho.shape[0]))  # Number of qubits
-    if len(measurement_basis) != N:
+    if len(measurement_basis) == 1:
+        measurement_basis = measurement_basis * N
+    elif len(measurement_basis) != N:
         raise ValueError("Measurement basis string length must match the number of qubits.")
 
     # Apply rotation operators to rho based on the measurement basis
@@ -167,7 +166,7 @@ def sample_measurements(rho, num_shots, measurement_basis):
     # Normalize probabilities in case of numerical inaccuracies
     probs = np.array(probs)
     probs /= probs.sum()
-
+    probs = np.abs(probs)
     # Generate measurement outcomes
     outcomes = np.random.choice(len(basis_states), size=num_shots, p=probs)
 
@@ -523,10 +522,8 @@ def create_crosstalk_states(n):
     return state_cross_0_string, state_cross_1_string
 
 
-def ramsey_exp(n, initial_state_string, total_shots, delay, Gamma_phi, W, J, basis, Gamma_1=None, Gamma_2=None):
+def ramsey_exp(n, initial_state_string, total_shots, delay, Gamma_phi, W, J, base, Gamma_1=None, Gamma_2=None):
     Gamma_phi = np.array(Gamma_phi) / 2  # TODO this is for testing (gamma_phi = 2 decay rate)
-    total_shots = total_shots / len(delay)
-    total_shots = int(total_shots / len(basis))
 
     H = ramsey_H(n, W, J)
     if Gamma_1 is None:
@@ -545,50 +542,47 @@ def ramsey_exp(n, initial_state_string, total_shots, delay, Gamma_phi, W, J, bas
         delay = delay[1:]
         evolved_state.states = evolved_state.states[1:]
 
-    measurements = []
-    measurements.append(sample_state(evolved_state.states, total_shots, basis[0]))
+    measurements = sample_state(evolved_state.states, total_shots, base)
     return measurements
 
 
-def calc_det_expectation(n, results, delay):
-    expectation_det_x = []
-    expectation_det_y = []
-    result_X = results[0]
-    if len(results) > 1:
-        result_Y = results[1]
-
+def calc_det_expectation(n, results, delay, base):
+    expectation_det = []
     for j in range(len(delay)):
-        snapshot_x = []
-        snapshot_y = []
+        snapshot = []  # Specific time t
         for i in range(n):
             if i % 2 == 0:
-                result = results[0]
+                result = results[0]  # Even
             else:
-                result = results[1]
-            snapshot_x.append(calculate_expectation(result[0], i * "I" + "X" + (n - i - 1) * "I"))
-            if len(result) > 1:
-                snapshot_y.append(calculate_expectation(result[1], i * "I" + "Y" + (n - i - 1) * "I"))
+                result = results[1]  # Odd
+            snapshot.append(calculate_expectation(result[j], i * "I" + base + (
+                        n - i - 1) * "I"))  # expectation values for all qubits at time T in specific base
 
-        expectation_det_x.append(snapshot_x)
-        expectation_det_y.append(snapshot_y)
-    return expectation_det_x, expectation_det_y
+        expectation_det.append(snapshot)  # expecation value for all qubits for all times
+    return expectation_det
 
 
 import chains.graph as graph
 
 
-def calc_cross_expectation(n, basis, results, subgraphs):
-    expectation_cross_x = [0] * (n - 1)
-    expectation_cross_y = [0] * (n - 1)
-    for subgraph in subgraphs:
-        tuples = graph.tuplate_edges(subgraph)
-        edges = [min(t) for t in tuples]
-        for i in edges:
-            expectation_cross_x[i] = calculate_expectation(results[0][0], i * "I" + basis[0] + (n - i - 1) * "I") #TODO fix indexes
-            if len(basis) > 1:
-                expectation_cross_y[i] = calculate_expectation(results[1][1],
-                                                               i * "I" + basis[1] + (n - i - 1) * "I")
-    return expectation_cross_x, expectation_cross_y
+def calc_cross_expectation(n, results, delay,base, subgraphs):
+    expectation_cross = []  # all times all qubits
+    all_tuples = []
+    for j in range(len(delay)):
+        snapshot = [0] * (n)  # Specific time t all qubits
+        for i , subgraph in enumerate(subgraphs):
+            result = results[i]
+            tuples = graph.tuplate_edges(subgraph)
+            all_tuples.extend(tuples)# (node, neighbor) - first is fllipped, second is measured
+            edges = [min(t) for t in tuples]  # not correct for general case only for chain
+            measured = [(t[1]) for t in tuples]
+            for k in range(len(edges)):
+                snapshot[edges[k]] = calculate_expectation(result[j],
+                                                           measured[k] * "I" + base + (n - measured[k] - 1) * "I")
+        expectation_cross.append(snapshot)
+        all_tuples = sorted(all_tuples)
+        measured_qubits = [t[1] for t in all_tuples]
+    return expectation_cross, measured_qubits
 
 
 def crosstalk_subgraphs(n):
@@ -596,7 +590,7 @@ def crosstalk_subgraphs(n):
     g.create_grid(n, 1)
     subgraphs = g.divide_graph()
 
-    states = ["0" * n for _ in range(len(subgraphs))]
+    states = [["0"] * n for _ in range(len(subgraphs))]
     for i in range(len(subgraphs)):
         subgraph = subgraphs[i]
         flipped = subgraph.flipped_nodes
@@ -605,11 +599,12 @@ def crosstalk_subgraphs(n):
             connected = subgraph.edges[node]
             for conn in connected:
                 states[i][conn] = "+"
+    states = ["".join(state) for state in states]
     return states, subgraphs
 
 
 def simulate_circuit(n, total_shots, delay, Gamma_phi, W, J, basis, Gamma_1=None, Gamma_2=None):
-    state_det_0_string, state_det_1_string = create_detuning_states(n)
+    state_det_0_string, state_det_1_string = create_detuning_states(n)  # Todo change function for any graph
     crosstalk_states_strings, subgraphs = crosstalk_subgraphs(n)
 
     total_shots = total_shots / len(delay)
@@ -619,20 +614,42 @@ def simulate_circuit(n, total_shots, delay, Gamma_phi, W, J, basis, Gamma_1=None
     total_shots = int(total_shots)
 
     # Simulate detuning experiment
-    results_det = []
-    results_det.append(ramsey_exp(n, state_det_0_string, total_shots, delay, Gamma_phi, W, J, basis, Gamma_1, Gamma_2))
-    results_det.append(ramsey_exp(n, state_det_1_string, total_shots, delay, Gamma_phi, W, J, basis, Gamma_1, Gamma_2))
-    det_expectation_X, det_expectation_Y = calc_det_expectation(n, basis, results_det)
+    results_det = {}
+    for base in basis:
+        results_det[base] = []
+        results_det[base].append(
+            ramsey_exp(n, state_det_0_string, total_shots, delay, Gamma_phi, W, J, base, Gamma_1, Gamma_2))
+        results_det[base].append(
+            ramsey_exp(n, state_det_1_string, total_shots, delay, Gamma_phi, W, J, base, Gamma_1, Gamma_2))
+
+    expectation_det = {}
+    for base in basis:
+        expectation_det[base] = calc_det_expectation(n, results_det[base], delay, base)
 
     # Simulate crosstalk experiment
-    results_cross = []
-    for state in crosstalk_states_strings:
-        results_cross.append(ramsey_exp(n, state, total_shots, delay, Gamma_phi, W, J, basis, Gamma_1, Gamma_2))
-    cross_expectation_X, cross_expectation_Y = calc_cross_expectation(n, basis, results_cross, subgraphs)
+    results_cross = {}
+    for base in basis:
+        results_cross[base] = []
+        for state in crosstalk_states_strings:
+            results_cross[base].append(
+                ramsey_exp(n, state, total_shots, delay, Gamma_phi, W, J, base, Gamma_1, Gamma_2))
 
-    if len(basis) == 1:
-        return package_data([det_expectation_X, cross_expectation_X], n, total_shots, delay, W, J, Gamma_1, Gamma_2,
-                            Gamma_phi, [0] * n)
-    else:
-        return package_data([det_expectation_X, det_expectation_Y, cross_expectation_X, cross_expectation_Y], n,
-                            total_shots, delay, W, J, Gamma_1, Gamma_2, Gamma_phi, [0] * n)
+    expectation_cross = {}
+    measured_qubits = []
+    for base in basis:
+        expectation_cross[base], measured_qubits = calc_cross_expectation(n, results_cross[base], delay, base, subgraphs)
+
+    expectation_det_list = [expectation_det[base] for base in basis]
+    expectation_cross_list = [expectation_cross[base] for base in basis]
+
+
+
+
+    expectations = []
+    expectations.extend(expectation_det_list)
+    expectations.extend(expectation_cross_list)
+
+
+
+    return package_data(expectations, n, total_shots, delay, W, J, Gamma_1, Gamma_2,
+                            Gamma_phi, measured_qubits)

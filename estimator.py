@@ -119,8 +119,11 @@ def one_by_one_fit(batch_x_detuning, batch_y_detuning, batch_x_crosstalk, batch_
     decay = [params[i][0] for i in range(n)]
 
     crosstalk_qubits_measured = batch_x_crosstalk.qubits_measured
-    params = complex_fit(batch_x_crosstalk, batch_y_crosstalk)
-    J = [params[i][1] - W[crosstalk_qubits_measured[i]] for i in range(n - 1)]
+    if n > 1:
+        params = complex_fit(batch_x_crosstalk, batch_y_crosstalk)
+        J = [params[i][1] - W[crosstalk_qubits_measured[i]] for i in range(n - 1)]
+    else:
+        J = []
     return decay, W, J
 
 
@@ -130,11 +133,14 @@ def one_by_one_X(batch_x_detuning, batch_x_crosstalk):
     W = [params[i][1] for i in range(n)]
     decay = [params[i][0] for i in range(n)]
 
-    crosstalk_qubits_measured = batch_x_crosstalk.qubits_measured
-    params = fit_X(batch_x_crosstalk)
-    J = [params[i][1] - W[crosstalk_qubits_measured[i]] for i in range(n - 1)]
+    if n > 1:
+        crosstalk_qubits_measured = batch_x_crosstalk.qubits_measured
+        params = fit_X(batch_x_crosstalk)
+        J = [params[i][1] - W[crosstalk_qubits_measured[i]] for i in range(n - 1)]
 
-    J = np.abs(J)
+        J = np.abs(J)
+    else :
+        J = []
     decay = np.abs(decay)
     W = np.abs(W)
 
@@ -280,9 +286,13 @@ def full_complex_fit_modified(batch_x, batch_y, neighbors=0, W_given=None, J_giv
 
 
 def percent_error(correct, fitted):
-    mse = (correct - fitted) ** 2
-    relative_errors = mse
-    return relative_errors
+    MSE = []
+    for param in range(len(correct)):
+        mse = np.mean((np.array(correct[param]) - np.array(fitted[param]))) ** 2
+        MSE.append(mse)
+    # mse = (correct - fitted) ** 2
+    # relative_errors = mse
+    return MSE
 
 
 def calc_dist(fitted_values, correct_values):

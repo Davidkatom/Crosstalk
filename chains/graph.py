@@ -241,6 +241,7 @@ def tuplate_edges(subgraph):
     for node in flipped:
         for neighbor in subgraph.edges[node]:
             tuples.append((node, neighbor))
+    return tuples
 
 def print_subgraphs(subgraphs):
     for i, subgraph in enumerate(subgraphs):
